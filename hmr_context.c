@@ -59,3 +59,24 @@ int hmr_context_add_event_fd(struct hmr_context *ctx,int fd,int events,hmr_event
 		INFO_LOG("hmr context add event fd success.");
 	return retval;
 }
+
+int hmr_context_listen_fd(struct hmr_context *ctx)
+{
+	struct epoll_event events[1024];
+	struct hmr_event_data *event_data;
+	int i,k,events_nr=0;
+
+	for(k=0;k<20;k++){
+		events_nr=epoll_wait(ctx->epfd,events,ARRAY_SIZE(events),5000);
+		if(events_nr>0){
+			INFO_LOG("events_nr %d",events_nr);
+			for(i=0;i<events_nr;i++){
+				INFO_LOG("process events[%d]",i);
+				event_data=(struct hmr_event_data*)events[i].data.ptr;
+				event_data->event_handler(event_data->fd,event_data->data);
+			}
+		}
+	}
+
+	return 0;
+}

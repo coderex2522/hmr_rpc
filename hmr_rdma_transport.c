@@ -1,6 +1,5 @@
 #include <infiniband/verbs.h>
 #include <rdma/rdma_cma.h>
-#include <linux/list.h>
 #include <netinet/in.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
@@ -17,11 +16,18 @@ LIST_HEAD(dev_list);
 static struct hmr_device *hmr_rdma_dev_init(struct ibv_context *verbs)
 {
 	struct hmr_device *dev;
-
+	int retval=0;
+	INFO_LOG("HMR Device ibv context %p",verbs);
 	dev=(struct hmr_device*)calloc(1,sizeof(struct hmr_device));
 	if(!dev){
 		ERROR_LOG("Allocate hmr_device error.");
 		goto exit;
+	}
+
+	retval=ibv_query_device(verbs, &dev->device_attr);
+	if(retval<0){
+		ERROR_LOG("rdma query device attr error.");
+		goto cleandev;
 	}
 
 	dev->pd=ibv_alloc_pd(verbs);
@@ -34,7 +40,6 @@ static struct hmr_device *hmr_rdma_dev_init(struct ibv_context *verbs)
 	INIT_LIST_HEAD(&dev->dev_list_entry);
 
 	return dev;
-	
 cleandev:
 	free(dev);
 	dev=NULL;
@@ -99,28 +104,57 @@ static int on_cm_addr_resolved(struct rdma_cm_event *event,struct hmr_rdma_trans
 	return retval;
 }
 
+static struct hmr_cq* hmr_cq_get(struct hmr_device *device)
+{
+	struct hmr_cq *hcq;
+	
+	hcq=(struct hmr_cq*)calloc(1,sizeof(struct hmr_cq));
+	if(!hcq){
+		ERROR_LOG("allocate the memory of struct hmr_cq error.");
+		return NULL;
+	}
+	return hcq;
+}
+
+static int hmr_qp_create(struct hmr_rdma_transport *rdma_trans)
+{
+	int retval=0;
+	struct ibv_qp_init_attr qp_init_attr;
+	struct hmr_cq *hcq;
+	memset(&qp_init_attr,0,sizeof(qp_init_attr));
+	qp_init_attr.qp_context=rdma_trans;
+	
+	return retval;
+}
+
 static int on_cm_route_resolved(struct rdma_cm_event *event,struct hmr_rdma_transport *rdma_trans)
 {
-
+	int retval=0;
+	return retval;
 }
+
 static int on_cm_connect_request(struct rdma_cm_event *event,struct hmr_rdma_transport *rdma_trans)
 {
-
+	int retval=0;
+	return retval;
 }
 
 static int on_cm_established(struct rdma_cm_event *event,struct hmr_rdma_transport *rdma_trans)
 {
-
+	int retval=0;
+	return retval;
 }
 
 static int on_cm_disconnected(struct rdma_cm_event *event,struct hmr_rdma_transport *rdma_trans)
 {
-
+	int retval=0;
+	return retval;
 }
 
 static int on_cm_error(struct rdma_cm_event *event,struct hmr_rdma_transport *rdma_trans)
 {
-	
+	int retval=0;
+	return retval;
 }
 
 static int hmr_handle_ec_event(struct rdma_cm_event *event,struct hmr_rdma_transport *rdma_trans)
@@ -135,6 +169,7 @@ static int hmr_handle_ec_event(struct rdma_cm_event *event,struct hmr_rdma_trans
 	case RDMA_CM_EVENT_ROUTE_RESOLVED:
 		retval=on_cm_route_resolved(event, rdma_trans);
 		break;
+	/*server can call the connect request*/
 	case RDMA_CM_EVENT_CONNECT_REQUEST:
 		retval=on_cm_connect_request(event, rdma_trans);
 		break;
@@ -196,6 +231,8 @@ static int hmr_init_rdma_event_channel(struct hmr_rdma_transport *rdma_trans)
 	hmr_context_add_event_fd(rdma_trans->ctx, rdma_trans->event_channel->fd,
 						EPOLLIN,hmr_rdma_event_channel_handler, 
 						rdma_trans->event_channel);
+	return retval;
+	
 cleanec:
 	rdma_destroy_event_channel(rdma_trans->event_channel);
 	return retval;
@@ -251,14 +288,15 @@ static int hmr_rdma_transport_connect(struct hmr_rdma_transport* rdma_trans,
 		ERROR_LOG("rdma init port uri error.");
 		return retval;
 	}
-	
+
+	/*rdma_cm_id dont init the rdma_cm_id's verbs*/
 	retval=rdma_create_id(rdma_trans->event_channel,
 					&rdma_trans->cm_id,rdma_trans,RDMA_PS_TCP);
-	if(retval==-1){
+	if(retval){
 		ERROR_LOG("Rdma create id error.");
 		goto cleanrdmatrans;
 	}
-
+	INFO_LOG("ibv context %p",rdma_trans->cm_id->verbs);
 	retval=rdma_resolve_addr(rdma_trans->cm_id,NULL,
 					(struct sockaddr*)&rdma_trans->peer_addr,
 					ADDR_RESOLVE_TIMEOUT);
@@ -266,7 +304,7 @@ static int hmr_rdma_transport_connect(struct hmr_rdma_transport* rdma_trans,
 		ERROR_LOG("RDMA Device resolve addr error.");
 		goto cleancmid;
 	}
-
+	
 	return retval;
 	
 cleancmid:
@@ -278,9 +316,51 @@ cleanrdmatrans:
 	return retval;
 }
 
+static int hmr_rdma_transport_listen(struct hmr_rdma_transport *rdma_trans)
+{
+	int retval=0,backlog,listen_port;
+	struct sockaddr_in addr;
+	
+	retval=rdma_create_id(rdma_trans->event_channel,&rdma_trans->cm_id,
+						rdma_trans,RDMA_PS_TCP);
+	if(retval){
+		ERROR_LOG("rdma create id error.");
+		return retval;
+	}
+
+	memset(&addr,0,sizeof(addr));
+	addr.sin_family=AF_INET;
+	
+	retval=rdma_bind_addr(rdma_trans->cm_id,(struct sockaddr*)&addr);
+	if(retval){
+		ERROR_LOG("rdma bind addr error.");
+		goto cleanid;
+	}
+
+	backlog=10;
+	retval=rdma_listen(rdma_trans->cm_id,backlog);
+	if(retval){
+		ERROR_LOG("rdma listen error.");
+		goto cleanid;
+	}
+
+	listen_port=ntohs(rdma_get_src_port(rdma_trans->cm_id));
+	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_LISTEN;
+	INFO_LOG("rdma listening on port %d",listen_port);
+
+	return retval;
+	
+cleanid:
+	rdma_destroy_id(rdma_trans->cm_id);
+	rdma_trans->cm_id=NULL;
+	
+	return retval;
+}
+
 struct hmr_rdma_transport_operations rdma_trans_ops={
 	.init		= hmr_rdma_transport_init,
 	.release	= hmr_rdma_transport_release,
 	.create		= hmr_rdma_transport_create,
-	.connect	= hmr_rdma_transport_connect
+	.connect	= hmr_rdma_transport_connect,
+	.listen		= hmr_rdma_transport_listen
 };	

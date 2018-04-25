@@ -22,6 +22,7 @@ struct hmr_device{
 	struct list_head dev_list_entry;
 	struct ibv_context	*verbs;
 	struct ibv_pd	*pd;
+	struct ibv_device_attr device_attr;
 };
 
 struct hmr_cq{
@@ -51,6 +52,7 @@ struct hmr_rdma_transport_operations{
 	struct hmr_rdma_transport*	(*create)(struct hmr_context *ctx);
 	int		(*connect)(struct hmr_rdma_transport* rdma_trans,
 								const char *url,const char*port);
+	int		(*listen)(struct hmr_rdma_transport* rdma_trans);
 };
 
 

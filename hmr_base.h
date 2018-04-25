@@ -7,8 +7,15 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <linux/list.h>
+#include <infiniband/verbs.h>
+#include <rdma/rdma_cma.h>
 
 #define HMR_EPOLL_INIT_SIZE 1024
+
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+#endif
 
 enum hmr_log_level{
 	HMR_LOG_LEVEL_ERROR,
