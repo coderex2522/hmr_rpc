@@ -30,7 +30,8 @@ cleanctx:
 }
 
 
-int hmr_context_add_event_fd(struct hmr_context *ctx,int fd,int events,hmr_event_handler event_handler,void *data)
+int hmr_context_add_event_fd(struct hmr_context *ctx,int fd,int events,
+						hmr_event_handler event_handler,void *data)
 {
 	struct epoll_event ee;
 	struct hmr_event_data *event_data;
@@ -60,13 +61,24 @@ int hmr_context_add_event_fd(struct hmr_context *ctx,int fd,int events,hmr_event
 	return retval;
 }
 
+int hmr_context_del_event_fd(struct hmr_context *ctx,int fd)
+{
+	int retval=0;
+	retval=epoll_ctl(ctx->epfd,EPOLL_CTL_DEL,fd,NULL);
+	if(retval<0)
+		ERROR_LOG("context del event fd error.");
+	
+	return retval;
+}
+
+
 int hmr_context_listen_fd(struct hmr_context *ctx)
 {
 	struct epoll_event events[1024];
 	struct hmr_event_data *event_data;
-	int i,k,events_nr=0;
+	int i,events_nr=0;
 
-	for(k=0;k<20;k++){
+	while(1){
 		events_nr=epoll_wait(ctx->epfd,events,ARRAY_SIZE(events),5000);
 		if(events_nr>0){
 			INFO_LOG("events_nr %d",events_nr);

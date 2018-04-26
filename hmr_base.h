@@ -16,6 +16,7 @@
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 #endif
+#define min(a,b) (a>b?b:a)
 
 enum hmr_log_level{
 	HMR_LOG_LEVEL_ERROR,

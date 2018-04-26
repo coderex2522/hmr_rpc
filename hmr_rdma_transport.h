@@ -4,6 +4,16 @@
 #define ADDR_RESOLVE_TIMEOUT 500
 #define ROUTE_RESOLVE_TIMEOUT 500
 
+/*call ibv_create_cq alloc size--second parameter*/
+#define CQE_ALLOC_SIZE 20
+
+/*set the max send/recv wr num*/
+#define MAX_SEND_WR 256
+#define MAX_RECV_WR 256
+
+/*set the memory max size*/
+#define MAX_MEM_SIZE 4096
+
 extern struct list_head dev_list;
 
 enum hmr_rdma_transport_state {
@@ -27,8 +37,10 @@ struct hmr_device{
 
 struct hmr_cq{
 	struct ibv_cq	*cq;
-	struct ibv_comp_channel	*channel;
+	struct ibv_comp_channel	*comp_channel;
 	struct hmr_device *device;
+	/*add the fd of comp_channel into the ctx*/
+	struct hmr_context *ctx;
 };
 
 struct hmr_rdma_transport{
@@ -36,13 +48,21 @@ struct hmr_rdma_transport{
 	struct sockaddr_in local_addr;
 
 	struct hmr_device *device;
+	struct hmr_context *ctx;
 	struct hmr_cq	*hcq;
 	struct ibv_qp	*qp;
 	struct rdma_event_channel	*event_channel;
-	struct hmr_context *ctx;
 	struct rdma_cm_id	*cm_id;
 
 	enum hmr_rdma_transport_state trans_state;
+
+	struct ibv_mr *send_mr;
+	struct ibv_mr *recv_mr;
+
+	char *send_region;
+	char *recv_region;
+
+	int is_client;
 	//struct hmr_rdma_transport_operations *ops;
 };
 
