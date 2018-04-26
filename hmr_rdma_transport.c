@@ -332,7 +332,7 @@ static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans)
 	sge.lkey=rdma_trans->recv_mr->lkey;
 
 	err=ibv_post_recv(rdma_trans->qp, &recv_wr, &bad_wr);
-	if(err){
+	if(err){
 		ERROR_LOG("ibv post recv error.");
 	}
 }
