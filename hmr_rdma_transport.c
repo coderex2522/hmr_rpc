@@ -548,7 +548,7 @@ static struct hmr_rdma_transport *hmr_rdma_transport_create(struct hmr_context *
 	struct hmr_rdma_transport *rdma_trans;
 
 	rdma_trans=(struct hmr_rdma_transport*)calloc(1,sizeof(struct hmr_rdma_transport));
-	if(!rdma_trans){
+	if(!rdma_trans){
 		ERROR_LOG("Allocate hmr_rdma_transport memory error.",__func__);
 		return NULL;
 	}
@@ -638,7 +638,7 @@ static int hmr_rdma_transport_listen(struct hmr_rdma_transport *rdma_trans)
 	addr.sin_family=AF_INET;
 	
 	retval=rdma_bind_addr(rdma_trans->cm_id,(struct sockaddr*)&addr);
-	if(retval){
+	if(retval){
 		ERROR_LOG("rdma bind addr error.");
 		goto cleanid;
 	}
