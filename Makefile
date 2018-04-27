@@ -17,4 +17,5 @@ server:hmr_log.o hmr_context.o hmr_rdma_transport.o server.o
 	
 clean:
 	rm -rf *.o
-	rm -rf test
+	rm -rf client
+	rm -rf server
