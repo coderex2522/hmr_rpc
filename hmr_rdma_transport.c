@@ -490,7 +490,8 @@ static int on_cm_disconnected(struct rdma_cm_event *event, struct hmr_rdma_trans
 	free(rdma_trans->recv_region);
 
 	INFO_LOG("rdma disconnected success.");
-	
+
+	rdma_trans->ctx->is_stop=1;
 	return retval;
 }
 

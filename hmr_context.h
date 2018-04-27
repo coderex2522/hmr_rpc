@@ -3,6 +3,7 @@
 
 struct hmr_context{
 	int epfd;
+	int is_stop;
 };
 
 struct hmr_context *hmr_context_create();

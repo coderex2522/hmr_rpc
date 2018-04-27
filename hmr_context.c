@@ -88,6 +88,9 @@ int hmr_context_listen_fd(struct hmr_context *ctx)
 				event_data->event_handler(event_data->fd,event_data->data);
 			}
 		}
+		if(ctx->is_stop){
+			break;
+		}
 	}
 
 	return 0;
