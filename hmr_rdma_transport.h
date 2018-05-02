@@ -64,16 +64,29 @@ struct hmr_rdma_transport{
 
 	int is_client;
 	//struct hmr_rdma_transport_operations *ops;
+	struct hmr_rdma_transport *new_rdma_trans;
+
+	struct hmr_mempool *normal_mempool;
 };
 
 struct hmr_rdma_transport_operations{
 	int		(*init)();
 	int		(*release)();
-	struct hmr_rdma_transport*	(*create)(struct hmr_context *ctx);
-	int		(*connect)(struct hmr_rdma_transport* rdma_trans,
-								const char *url,const char*port);
-	int		(*listen)(struct hmr_rdma_transport* rdma_trans);
+	
+	struct hmr_rdma_transport	*(*create)(struct hmr_context *ctx);
+	
+	int		(*connect)(struct hmr_rdma_transport *rdma_trans,
+								const char *url,const char *port);
+	
+	int		(*listen)(struct hmr_rdma_transport *rdma_trans);
+	struct hmr_rdma_transport	*(*accept)(struct hmr_rdma_transport *rdma_trans);
+	int 	(*send)(struct hmr_rdma_transport *rdma_trans,struct hmr_msg *msg);
 };
 
+
+struct hmr_msg_wr{
+	struct hmr_msg *msg;
+	struct hmr_rdma_transport *rdma_trans;
+};
 
 #endif

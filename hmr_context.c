@@ -77,7 +77,8 @@ int hmr_context_listen_fd(struct hmr_context *ctx)
 	struct epoll_event events[1024];
 	struct hmr_event_data *event_data;
 	int i,events_nr=0;
-
+	ctx->is_stop=0;
+	
 	while(1){
 		events_nr=epoll_wait(ctx->epfd,events,ARRAY_SIZE(events),5000);
 		if(events_nr>0){

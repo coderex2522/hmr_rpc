@@ -18,8 +18,11 @@ int main(int argc,char **argv)
 	
 	ctx=hmr_context_create();
 	rdma_trans_ops.init();
+	
 	rdma_trans=rdma_trans_ops.create(ctx);
 	rdma_trans_ops.connect(rdma_trans,argv[1],argv[2]);
+	hmr_context_listen_fd(ctx);
+	rdma_trans_ops.send(rdma_trans);
 	hmr_context_listen_fd(ctx);
 	return 0;
 }

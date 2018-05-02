@@ -12,6 +12,7 @@
 #include <rdma/rdma_cma.h>
 
 #define HMR_EPOLL_INIT_SIZE 1024
+#define HMR_MAX_DATA_ENTRY 4
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
@@ -31,5 +32,25 @@ enum hmr_log_level{
  * check the rdma device is exist.
  */
 int hmr_rdma_dev_is_exist();
+
+
+/*the structure about hmr  msg*/
+enum hmr_msg_type{
+	HMR_MSG_COMMON,
+	HMR_MSG_READ,
+	HMR_MSG_WRITE
+};
+
+struct hmr_iovec{
+	void *iov_base;
+	size_t iov_len;
+	struct hmr_iovec *next;
+};
+
+struct hmr_msg{
+	enum hmr_msg_type msg_type;
+	int nents;
+	struct hmr_iovec *data;
+};
 
 #endif

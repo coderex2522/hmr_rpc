@@ -14,13 +14,17 @@ extern struct hmr_rdma_transport_operations rdma_trans_ops;
 int main(int argc,char **argv)
 {
 	struct hmr_context *ctx;
-	struct hmr_rdma_transport *rdma_trans;
+	struct hmr_rdma_transport *listen_rdma_trans,*new_rdma_trans;
 	
 	ctx=hmr_context_create();
 	rdma_trans_ops.init();
-	rdma_trans=rdma_trans_ops.create(ctx);
-	rdma_trans_ops.listen(rdma_trans);
-	hmr_context_listen_fd(ctx);
+	listen_rdma_trans=rdma_trans_ops.create(ctx);
+	rdma_trans_ops.listen(listen_rdma_trans);
+
+	while((new_rdma_trans=rdma_trans_ops.accept(listen_rdma_trans))!=NULL){
+		rdma_trans_ops.send(new_rdma_trans);
+	}
+	
 	return 0;
 }
 
