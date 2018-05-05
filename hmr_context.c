@@ -72,13 +72,13 @@ int hmr_context_del_event_fd(struct hmr_context *ctx,int fd)
 }
 
 
-int hmr_context_listen_fd(struct hmr_context *ctx)
+void *hmr_context_run(void *data)
 {
 	struct epoll_event events[1024];
 	struct hmr_event_data *event_data;
+	struct hmr_context *ctx=(struct hmr_context*)data;
 	int i,events_nr=0;
-	ctx->is_stop=0;
-	
+
 	while(1){
 		events_nr=epoll_wait(ctx->epfd,events,ARRAY_SIZE(events),5000);
 		if(events_nr>0){

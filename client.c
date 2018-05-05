@@ -15,15 +15,18 @@ int main(int argc,char **argv)
 {
 	struct hmr_context *ctx;
 	struct hmr_rdma_transport *rdma_trans;
+	int err=0;
 	
 	ctx=hmr_context_create();
 	rdma_trans_ops.init();
-	
 	rdma_trans=rdma_trans_ops.create(ctx);
 	rdma_trans_ops.connect(rdma_trans,argv[1],argv[2]);
-	hmr_context_listen_fd(ctx);
-	rdma_trans_ops.send(rdma_trans);
-	hmr_context_listen_fd(ctx);
+	err=pthread_create(&ctx->epoll_pthread,NULL,hmr_context_run,ctx);
+	if(err){
+		ERROR_LOG("pthread create error.");
+		return -1;
+	}
+	pthread_join(ctx->epoll_pthread,NULL);
 	return 0;
 }
 

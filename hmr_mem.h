@@ -1,32 +1,17 @@
 #ifndef HMR_MEM_H
 #define HMR_MEM_H
 
-#define HMR_MR_LIST_SIZE 11
-#define HMR_ORDER_SIZE HMR_MR_LIST_SIZE
+#define ALLOC_MEM_SIZE 4096
 
-struct hmr_iovec_mem{
-	struct hmr_iovec iovec;
-	/*the length is real size in memory allocator */
-	int length;
-	struct ibv_mr *mr;
-	struct list_head iovec_list_entry;
-};
-
-/*base_addr:8 16 32 64 128 256 512 1024 2048*/
 struct hmr_mempool{
-	struct list_head empty_mr_list[HMR_MR_LIST_SIZE];
-	struct list_head used_mr_list[HMR_MR_LIST_SIZE];
+	void *send_base;
+	void *recv_base;
+	struct ibv_mr *send_mr;
+	struct ibv_mr *recv_mr;
 };
 
-struct hmr_iovec *alloc_iovec_mem(struct hmr_mempool *mempool, int size);
+struct hmr_mempool *hmr_mempool_create(struct hmr_rdma_transport *rdma_trans, int is_nvm);
+void hmr_mempool_release(struct hmr_mempool *mempool);
 
-/*note:need to consider the DRAM buffer for NVM*/
-/*
-struct hmr_nvm_mempool{
-
-};
-
-
-int alloc_iovec_nvmmem(struct hmr_mempool * mempool, struct hmr_iovec * iovec);
-*/
 #endif
+
