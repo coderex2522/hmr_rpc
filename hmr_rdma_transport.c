@@ -325,49 +325,7 @@ static void hmr_qp_release(struct hmr_rdma_transport* rdma_trans)
 		rdma_trans->hcq=NULL;
 	}
 }
-/*
-static struct hmr_mempool *hmr_register_memory(struct hmr_rdma_transport *rdma_trans)
-{
-	struct hmr_mempool *mempool;
-	int err=0;
-	
-	mempool=(struct hmr_mempool*)calloc(1,sizeof(struct hmr_mempool));
-	if(!mempool){
-		ERROR_LOG("allocate memory error.");
-		return NULL;
-	}
-	
-	mempool->send_region=malloc(MAX_MEM_SIZE);
-	if(!mempool->send_region){
-		ERROR_LOG("allocate memory error.");
-		return NULL;
-	}
-	
-	mempool->recv_region=malloc(MAX_MEM_SIZE);
-	if(!mempool->send_region){
-		ERROR_LOG("allocate memory error.");
-		return NULL;
-	}
 
-	mempool->send_mr=ibv_reg_mr(rdma_trans->device->pd, 
-					mempool->send_region, 
-					MAX_MEM_SIZE,
-					IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
-	if(!mempool->send_mr){
-		ERROR_LOG("rdma register memory error.");
-		return NULL;
-	}
-
-	mempool->recv_mr=ibv_reg_mr(rdma_trans->device->pd, 
-								mempool->recv_region,
-								MAX_MEM_SIZE,
-								IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
-	if(!mempool->recv_mr){
-		ERROR_LOG("rdma register memory error.");
-		return NULL;
-	}
-	return mempool;
-}*/
 static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans)
 {
 	struct ibv_recv_wr recv_wr,*bad_wr=NULL;
@@ -518,12 +476,11 @@ static int on_cm_disconnected(struct rdma_cm_event *event, struct hmr_rdma_trans
 
 	rdma_destroy_qp(rdma_trans->cm_id);
 
-	ibv_dereg_mr(rdma_trans->normal_mempool->send_mr);
-	ibv_dereg_mr(rdma_trans->normal_mempool->recv_mr);
-
-	free(rdma_trans->normal_mempool->send_region);
-	free(rdma_trans->normal_mempool->recv_region);
-
+	hmr_mempool_release(rdma_trans->normal_mempool);
+#ifdef HMR_NVM_ENABLE
+	hmr_mempool_release(rdma_trans->nvm_buffer);
+	hmr_mempool_release(rdma_trans->nvm_mempool);
+#endif
 	INFO_LOG("rdma disconnected success.");
 
 	if(rdma_trans->is_client)

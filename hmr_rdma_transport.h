@@ -55,16 +55,14 @@ struct hmr_rdma_transport{
 	struct rdma_cm_id	*cm_id;
 
 	enum hmr_rdma_transport_state trans_state;
-
-	struct hmr_mempool *normal_mempool;
-
+	
 	int is_client;
-	/*
+	
 	struct hmr_mempool *normal_mempool;
 #ifdef HMR_NVM_ENABLE
 	struct hmr_mempool *nvm_mempool;
 	struct hmr_mempool *nvm_buffer;
-#endif*/
+#endif
 
 	struct hmr_rdma_transport *accept_rdma_trans;
 };

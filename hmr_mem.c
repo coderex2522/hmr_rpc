@@ -14,60 +14,25 @@ struct hmr_mempool *hmr_mempool_create(struct hmr_rdma_transport *rdma_trans, in
 		ERROR_LOG("allocate memory error.");
 		return NULL;
 	}
-
-	mempool->send_region=malloc(MAX_MEM_SIZE);
-	if(!mempool->send_region){
-		ERROR_LOG("allocate memory error.");
-		return NULL;
-	}
 	
-	mempool->recv_region=malloc(MAX_MEM_SIZE);
+	mempool->send_region=malloc(ALLOC_MEM_SIZE*2);
 	if(!mempool->send_region){
-		ERROR_LOG("allocate memory error.");
-		return NULL;
-	}
-
-	mempool->send_mr=ibv_reg_mr(rdma_trans->device->pd, 
-					mempool->send_region, 
-					MAX_MEM_SIZE,
-					IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
-	if(!mempool->send_mr){
-		ERROR_LOG("rdma register memory error.");
-		return NULL;
-	}
-
-	mempool->recv_mr=ibv_reg_mr(rdma_trans->device->pd, 
-								mempool->recv_region,
-								MAX_MEM_SIZE,
-								IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
-	if(!mempool->recv_mr){
-		ERROR_LOG("rdma register memory error.");
-		return NULL;
-	}
-	return mempool;
-	/*
-	if(is_nvm)
-		mempool->send_base=nvm_malloc(ALLOC_MEM_SIZE*2);
-	else*/
-	/*
-	mempool->send_base=malloc(ALLOC_MEM_SIZE*2);
-	if(!mempool->send_base){
 		 ERROR_LOG("allocate memory error.");
 		 goto cleanmempool;
 	}
-	mempool->recv_base=mempool->send_base+ALLOC_MEM_SIZE;
+	mempool->recv_region=mempool->send_region+ALLOC_MEM_SIZE;
 
-	mempool->send_mr=ibv_reg_mr(rdma_trans->device->pd, mempool->send_base, 
+	mempool->send_mr=ibv_reg_mr(rdma_trans->device->pd, mempool->send_region, 
 							ALLOC_MEM_SIZE,
 							IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | 
 							IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC);
 
 	if(!mempool->send_mr){
 		ERROR_LOG("RDMA register memory error.");
-		goto cleansendbase;
+		goto cleansendregion;
 	}
 
-	mempool->recv_mr=ibv_reg_mr(rdma_trans->device->pd, mempool->recv_base, 
+	mempool->recv_mr=ibv_reg_mr(rdma_trans->device->pd, mempool->recv_region, 
 							ALLOC_MEM_SIZE,
 							IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | 
 							IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC);
@@ -79,16 +44,15 @@ struct hmr_mempool *hmr_mempool_create(struct hmr_rdma_transport *rdma_trans, in
 	return mempool;
 	
 cleansendmr:
-
 	ibv_dereg_mr(mempool->send_mr);
 	
-cleansendbase:
-	free(mempool->send_base);
+cleansendregion:
+	free(mempool->send_region);
 	
 cleanmempool:
 	free(mempool);
 	
-	return NULL;*/
+	return NULL;
 }
 
 
@@ -102,6 +66,6 @@ void hmr_mempool_release(struct hmr_mempool *mempool)
 	ibv_dereg_mr(mempool->recv_mr);
 
 	free(mempool->send_region);
-	free(mempool->recv_region);
+	//free(mempool->recv_region);
 }
 
