@@ -30,6 +30,7 @@ int main(int argc,char **argv)
 
 	while((accept_rdma_trans=rdma_trans_ops.accept(rdma_trans))!=NULL){
 		INFO_LOG("accept success.");
+		rdma_trans_ops.send(accept_rdma_trans);
 	}
 	pthread_join(ctx->epoll_pthread,NULL);
 	return 0;

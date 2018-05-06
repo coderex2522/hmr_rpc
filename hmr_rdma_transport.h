@@ -75,6 +75,7 @@ struct hmr_rdma_transport_operations{
 								const char *url,const char*port);
 	int		(*listen)(struct hmr_rdma_transport* rdma_trans);
 	struct hmr_rdma_transport	*(*accept)(struct hmr_rdma_transport *rdma_trans);
+	int 	(*send)(struct hmr_rdma_transport* rdma_trans);
 };
 
 

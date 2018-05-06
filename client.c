@@ -26,6 +26,7 @@ int main(int argc,char **argv)
 		ERROR_LOG("pthread create error.");
 		return -1;
 	}
+	rdma_trans_ops.send(rdma_trans);
 	pthread_join(ctx->epoll_pthread,NULL);
 	return 0;
 }

@@ -422,11 +422,17 @@ static int on_cm_connect_request(struct rdma_cm_event *event, struct hmr_rdma_tr
 	return retval;
 }
 
-static void hmr_post_send_example(struct hmr_rdma_transport *rdma_trans)
+static int hmr_rdma_transport_send(struct hmr_rdma_transport *rdma_trans)
 {
 	struct ibv_send_wr send_wr,*bad_wr=NULL;
 	struct ibv_sge sge;
 	int err=0;
+
+	while(rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_CONNECTED){
+		if(rdma_trans->trans_state>HMR_RDMA_TRANSPORT_STATE_CONNECTED)
+			return -1;
+	}
+	
 	if(rdma_trans->is_client)
 		snprintf(rdma_trans->normal_mempool->send_region,MAX_MEM_SIZE,"message from client.");
 	else
@@ -443,11 +449,13 @@ static void hmr_post_send_example(struct hmr_rdma_transport *rdma_trans)
 	sge.addr=(uintptr_t)rdma_trans->normal_mempool->send_region;
 	sge.length=MAX_MEM_SIZE;
 	sge.lkey=rdma_trans->normal_mempool->send_mr->lkey;
-
+	
 	err=ibv_post_send(rdma_trans->qp, &send_wr, &bad_wr);
 	if(err){
 		ERROR_LOG("ibv post send error.");
 	}
+	
+	return 0;
 }
 
 static int on_cm_established(struct rdma_cm_event *event, struct hmr_rdma_transport *rdma_trans)
@@ -461,10 +469,8 @@ static int on_cm_established(struct rdma_cm_event *event, struct hmr_rdma_transp
 	memcpy(&rdma_trans->peer_addr,
 		&rdma_trans->cm_id->route.addr.dst_sin,
 		sizeof(rdma_trans->peer_addr));
-	
-	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_CONNECTED;
 
-	hmr_post_send_example(rdma_trans);
+	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_CONNECTED;
 
 	return retval;
 }
@@ -518,6 +524,7 @@ static int hmr_handle_ec_event(struct rdma_cm_event *event)
 		break;
 	case RDMA_CM_EVENT_CONNECT_ERROR:
 		rdma_trans->ctx->is_stop=1;
+		rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_ERROR;
 	default:
 		/*occur an error*/
 		retval=-1;
@@ -725,6 +732,7 @@ static struct hmr_rdma_transport *hmr_rdma_transport_accept(struct hmr_rdma_tran
 		ERROR_LOG("rdma accept error.");
 		return NULL;
 	}
+	
 	accept_rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_CONNECTING;
 	accept_rdma_trans->normal_mempool=hmr_mempool_create(accept_rdma_trans, 0);
 #ifdef HMR_NVM_ENABLE
@@ -743,5 +751,6 @@ struct hmr_rdma_transport_operations rdma_trans_ops={
 	.create		= hmr_rdma_transport_create,
 	.connect	= hmr_rdma_transport_connect,
 	.listen		= hmr_rdma_transport_listen,
-	.accept		= hmr_rdma_transport_accept
+	.accept		= hmr_rdma_transport_accept,
+	.send		= hmr_rdma_transport_send
 };	

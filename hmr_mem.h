@@ -4,8 +4,8 @@
 #define ALLOC_MEM_SIZE 1024
 
 struct hmr_mempool{
-	char *send_region;
-	char *recv_region;
+	void *send_region;
+	void *recv_region;
 
 	struct ibv_mr *send_mr;
 	struct ibv_mr *recv_mr;
