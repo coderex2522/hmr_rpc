@@ -12,7 +12,7 @@
 #define MAX_RECV_WR 256
 
 /*set the memory max size*/
-#define MAX_MEM_SIZE 4096
+#define MAX_MEM_SIZE 1024
 
 extern struct list_head dev_list;
 
@@ -42,7 +42,7 @@ struct hmr_cq{
 	/*add the fd of comp_channel into the ctx*/
 	struct hmr_context *ctx;
 };
-
+ 
 struct hmr_rdma_transport{
 	struct sockaddr_in	peer_addr;
 	struct sockaddr_in local_addr;
@@ -56,19 +56,15 @@ struct hmr_rdma_transport{
 
 	enum hmr_rdma_transport_state trans_state;
 
-	struct ibv_mr *send_mr;
-	struct ibv_mr *recv_mr;
-
-	char *send_region;
-	char *recv_region;
+	struct hmr_mempool *normal_mempool;
 
 	int is_client;
-	//struct hmr_rdma_transport_operations *ops;
+	/*
 	struct hmr_mempool *normal_mempool;
 #ifdef HMR_NVM_ENABLE
 	struct hmr_mempool *nvm_mempool;
 	struct hmr_mempool *nvm_buffer;
-#endif
+#endif*/
 
 	struct hmr_rdma_transport *accept_rdma_trans;
 };

@@ -181,11 +181,11 @@ static void hmr_cq_comp_channel_handler(int fd, void *data)
 			switch (wc.opcode)
 			{
 			case IBV_WC_SEND:
-				INFO_LOG("IBV_WC_SEND send the content [%s] success.",rdma_trans->send_region);
+				INFO_LOG("IBV_WC_SEND send the content [%s] success.",rdma_trans->normal_mempool->send_region);
 				test_num++;
 				break;
 			case IBV_WC_RECV:
-				INFO_LOG("IBV_WC_RECV recv the content [%s] success.",rdma_trans->recv_region);
+				INFO_LOG("IBV_WC_RECV recv the content [%s] success.",rdma_trans->normal_mempool->recv_region);
 				test_num++;
 				break;
 			case IBV_WC_RDMA_WRITE:
@@ -325,31 +325,49 @@ static void hmr_qp_release(struct hmr_rdma_transport* rdma_trans)
 		rdma_trans->hcq=NULL;
 	}
 }
-
-static void hmr_register_memory(struct hmr_rdma_transport *rdma_trans)
+/*
+static struct hmr_mempool *hmr_register_memory(struct hmr_rdma_transport *rdma_trans)
 {
-	rdma_trans->send_region=malloc(MAX_MEM_SIZE);
-	rdma_trans->recv_region=malloc(MAX_MEM_SIZE);
+	struct hmr_mempool *mempool;
+	int err=0;
+	
+	mempool=(struct hmr_mempool*)calloc(1,sizeof(struct hmr_mempool));
+	if(!mempool){
+		ERROR_LOG("allocate memory error.");
+		return NULL;
+	}
+	
+	mempool->send_region=malloc(MAX_MEM_SIZE);
+	if(!mempool->send_region){
+		ERROR_LOG("allocate memory error.");
+		return NULL;
+	}
+	
+	mempool->recv_region=malloc(MAX_MEM_SIZE);
+	if(!mempool->send_region){
+		ERROR_LOG("allocate memory error.");
+		return NULL;
+	}
 
-	rdma_trans->send_mr=ibv_reg_mr(rdma_trans->device->pd, 
-					rdma_trans->send_region, 
+	mempool->send_mr=ibv_reg_mr(rdma_trans->device->pd, 
+					mempool->send_region, 
 					MAX_MEM_SIZE,
 					IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
-	if(!rdma_trans->send_mr){
+	if(!mempool->send_mr){
 		ERROR_LOG("rdma register memory error.");
-		return ;
+		return NULL;
 	}
 
-	rdma_trans->recv_mr=ibv_reg_mr(rdma_trans->device->pd, 
-								rdma_trans->recv_region,
+	mempool->recv_mr=ibv_reg_mr(rdma_trans->device->pd, 
+								mempool->recv_region,
 								MAX_MEM_SIZE,
 								IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
-	if(!rdma_trans->recv_mr){
+	if(!mempool->recv_mr){
 		ERROR_LOG("rdma register memory error.");
-		return ;
+		return NULL;
 	}
-}
-
+	return mempool;
+}*/
 static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans)
 {
 	struct ibv_recv_wr recv_wr,*bad_wr=NULL;
@@ -362,9 +380,9 @@ static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans)
 	recv_wr.sg_list=&sge;
 	recv_wr.num_sge=1;
 
-	sge.addr=(uintptr_t)rdma_trans->recv_region;
+	sge.addr=(uintptr_t)rdma_trans->normal_mempool->recv_region;
 	sge.length=MAX_MEM_SIZE;
-	sge.lkey=rdma_trans->recv_mr->lkey;
+	sge.lkey=rdma_trans->normal_mempool->recv_mr->lkey;
 
 	err=ibv_post_recv(rdma_trans->qp, &recv_wr, &bad_wr);
 	if(err){
@@ -404,7 +422,7 @@ static int on_cm_route_resolved(struct rdma_cm_event *event, struct hmr_rdma_tra
 		goto cleanqp;
 	}
 
-	hmr_register_memory(rdma_trans);
+	rdma_trans->normal_mempool=hmr_mempool_create(rdma_trans,0);
 	hmr_post_recv(rdma_trans);
 	
 	return retval;
@@ -453,9 +471,9 @@ static void hmr_post_send_example(struct hmr_rdma_transport *rdma_trans)
 	struct ibv_sge sge;
 	int err=0;
 	if(rdma_trans->is_client)
-		snprintf(rdma_trans->send_region,MAX_MEM_SIZE,"message from client.");
+		snprintf(rdma_trans->normal_mempool->send_region,MAX_MEM_SIZE,"message from client.");
 	else
-		snprintf(rdma_trans->send_region,MAX_MEM_SIZE,"message from server.");
+		snprintf(rdma_trans->normal_mempool->send_region,MAX_MEM_SIZE,"message from server.");
 	
 	memset(&send_wr,0,sizeof(send_wr));
 
@@ -465,9 +483,9 @@ static void hmr_post_send_example(struct hmr_rdma_transport *rdma_trans)
 	send_wr.sg_list=&sge;
 	send_wr.send_flags=IBV_SEND_SIGNALED;
 
-	sge.addr=(uintptr_t)rdma_trans->send_region;
+	sge.addr=(uintptr_t)rdma_trans->normal_mempool->send_region;
 	sge.length=MAX_MEM_SIZE;
-	sge.lkey=rdma_trans->send_mr->lkey;
+	sge.lkey=rdma_trans->normal_mempool->send_mr->lkey;
 
 	err=ibv_post_send(rdma_trans->qp, &send_wr, &bad_wr);
 	if(err){
@@ -500,11 +518,11 @@ static int on_cm_disconnected(struct rdma_cm_event *event, struct hmr_rdma_trans
 
 	rdma_destroy_qp(rdma_trans->cm_id);
 
-	ibv_dereg_mr(rdma_trans->send_mr);
-	ibv_dereg_mr(rdma_trans->recv_mr);
+	ibv_dereg_mr(rdma_trans->normal_mempool->send_mr);
+	ibv_dereg_mr(rdma_trans->normal_mempool->recv_mr);
 
-	free(rdma_trans->send_region);
-	free(rdma_trans->recv_region);
+	free(rdma_trans->normal_mempool->send_region);
+	free(rdma_trans->normal_mempool->recv_region);
 
 	INFO_LOG("rdma disconnected success.");
 
@@ -747,8 +765,10 @@ static struct hmr_rdma_transport *hmr_rdma_transport_accept(struct hmr_rdma_tran
 		ERROR_LOG("rdma accept error.");
 		return NULL;
 	}
-	hmr_register_memory(accept_rdma_trans);
+	
+	accept_rdma_trans->normal_mempool=hmr_mempool_create(accept_rdma_trans,0);
 	hmr_post_recv(accept_rdma_trans);
+
 /*
 	accept_rdma_trans->normal_mempool=hmr_mempool_create(accept_rdma_trans, 0);
 #ifdef HMR_NVM_ENABLE

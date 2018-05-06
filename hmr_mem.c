@@ -9,15 +9,47 @@ struct hmr_mempool *hmr_mempool_create(struct hmr_rdma_transport *rdma_trans, in
 	struct hmr_mempool *mempool;
 	int err=0;
 	
-	mempool=(struct hmr_mempool*)calloc(1,sizeof(mempool));
+	mempool=(struct hmr_mempool*)calloc(1,sizeof(struct hmr_mempool));
 	if(!mempool){
 		ERROR_LOG("allocate memory error.");
 		return NULL;
 	}
+
+	mempool->send_region=malloc(MAX_MEM_SIZE);
+	if(!mempool->send_region){
+		ERROR_LOG("allocate memory error.");
+		return NULL;
+	}
+	
+	mempool->recv_region=malloc(MAX_MEM_SIZE);
+	if(!mempool->send_region){
+		ERROR_LOG("allocate memory error.");
+		return NULL;
+	}
+
+	mempool->send_mr=ibv_reg_mr(rdma_trans->device->pd, 
+					mempool->send_region, 
+					MAX_MEM_SIZE,
+					IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
+	if(!mempool->send_mr){
+		ERROR_LOG("rdma register memory error.");
+		return NULL;
+	}
+
+	mempool->recv_mr=ibv_reg_mr(rdma_trans->device->pd, 
+								mempool->recv_region,
+								MAX_MEM_SIZE,
+								IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
+	if(!mempool->recv_mr){
+		ERROR_LOG("rdma register memory error.");
+		return NULL;
+	}
+	return mempool;
 	/*
 	if(is_nvm)
 		mempool->send_base=nvm_malloc(ALLOC_MEM_SIZE*2);
 	else*/
+	/*
 	mempool->send_base=malloc(ALLOC_MEM_SIZE*2);
 	if(!mempool->send_base){
 		 ERROR_LOG("allocate memory error.");
@@ -56,7 +88,7 @@ cleansendbase:
 cleanmempool:
 	free(mempool);
 	
-	return NULL;
+	return NULL;*/
 }
 
 
@@ -69,7 +101,7 @@ void hmr_mempool_release(struct hmr_mempool *mempool)
 	ibv_dereg_mr(mempool->send_mr);
 	ibv_dereg_mr(mempool->recv_mr);
 
-	free(mempool->send_base);
-	free(mempool->recv_base);
+	free(mempool->send_region);
+	free(mempool->recv_region);
 }
 

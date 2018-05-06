@@ -1,11 +1,12 @@
 #ifndef HMR_MEM_H
 #define HMR_MEM_H
 
-#define ALLOC_MEM_SIZE 4096
+#define ALLOC_MEM_SIZE 1024
 
 struct hmr_mempool{
-	void *send_base;
-	void *recv_base;
+	char *send_region;
+	char *recv_region;
+
 	struct ibv_mr *send_mr;
 	struct ibv_mr *recv_mr;
 };
