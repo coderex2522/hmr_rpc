@@ -116,14 +116,14 @@ static int on_cm_addr_resolved(struct rdma_cm_event *event, struct hmr_rdma_tran
 		ERROR_LOG("not found the hmr device.");
 		return -1;
 	}
-/*
+
 	INFO_LOG("RDMA Register Memory");
 	rdma_trans->normal_mempool=hmr_mempool_create(rdma_trans,0);
 #ifdef HMR_NVM_ENABLE
 	rdma_trans->nvm_buffer=hmr_mempool_create(rdma_trans,0);
 	rdma_trans->nvm_mempool=hmr_mempool_create(rdma_trans,1);
 #endif 
-*/
+
 	retval=rdma_resolve_route(rdma_trans->cm_id, ROUTE_RESOLVE_TIMEOUT);
 	if(retval){
 		ERROR_LOG("RDMA resolve route error.");
@@ -380,13 +380,12 @@ static int on_cm_route_resolved(struct rdma_cm_event *event, struct hmr_rdma_tra
 		goto cleanqp;
 	}
 
-	rdma_trans->normal_mempool=hmr_mempool_create(rdma_trans,0);
 	hmr_post_recv(rdma_trans);
-	
 	return retval;
 	
 cleanqp:
 	hmr_qp_release(rdma_trans);
+	rdma_trans->ctx->is_stop=1;
 	return retval;
 }
 
@@ -454,7 +453,7 @@ static void hmr_post_send_example(struct hmr_rdma_transport *rdma_trans)
 static int on_cm_established(struct rdma_cm_event *event, struct hmr_rdma_transport *rdma_trans)
 {
 	int retval=0;
-	
+
 	memcpy(&rdma_trans->local_addr,
 		&rdma_trans->cm_id->route.addr.src_sin,
 		sizeof(rdma_trans->local_addr));
@@ -462,11 +461,11 @@ static int on_cm_established(struct rdma_cm_event *event, struct hmr_rdma_transp
 	memcpy(&rdma_trans->peer_addr,
 		&rdma_trans->cm_id->route.addr.dst_sin,
 		sizeof(rdma_trans->peer_addr));
-
+	
 	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_CONNECTED;
 
 	hmr_post_send_example(rdma_trans);
-	
+
 	return retval;
 }
 
@@ -482,6 +481,9 @@ static int on_cm_disconnected(struct rdma_cm_event *event, struct hmr_rdma_trans
 	hmr_mempool_release(rdma_trans->nvm_mempool);
 #endif
 	INFO_LOG("rdma disconnected success.");
+
+	hmr_context_del_event_fd(rdma_trans->ctx, rdma_trans->hcq->comp_channel->fd);
+	hmr_context_del_event_fd(rdma_trans->ctx, rdma_trans->event_channel->fd);
 
 	if(rdma_trans->is_client)
 		rdma_trans->ctx->is_stop=1;
@@ -589,6 +591,7 @@ static struct hmr_rdma_transport *hmr_rdma_transport_create(struct hmr_context *
 		ERROR_LOG("allocate hmr_rdma_transport memory error.");
 		return NULL;
 	}
+	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_INIT;
 	rdma_trans->ctx=ctx;
 	hmr_init_rdma_event_channel(rdma_trans);
 
@@ -645,7 +648,7 @@ static int hmr_rdma_transport_connect(struct hmr_rdma_transport* rdma_trans,
 		ERROR_LOG("RDMA Device resolve addr error.");
 		goto cleancmid;
 	}
-	
+	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_CONNECTING;
 	rdma_trans->is_client=1;
 	return retval;
 	
@@ -722,17 +725,14 @@ static struct hmr_rdma_transport *hmr_rdma_transport_accept(struct hmr_rdma_tran
 		ERROR_LOG("rdma accept error.");
 		return NULL;
 	}
-	
-	accept_rdma_trans->normal_mempool=hmr_mempool_create(accept_rdma_trans,0);
-	hmr_post_recv(accept_rdma_trans);
-
-/*
+	accept_rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_CONNECTING;
 	accept_rdma_trans->normal_mempool=hmr_mempool_create(accept_rdma_trans, 0);
 #ifdef HMR_NVM_ENABLE
 	accept_rdma_trans->nvm_buffer=hmr_mempool_create(accept_rdma_trans,0);
 	accept_rdma_trans->nvm_mempool=hmr_mempool_create(accept_rdma_trans,1);
 #endif
-*/
+	hmr_post_recv(accept_rdma_trans);
+
 	return accept_rdma_trans;
 }
 
