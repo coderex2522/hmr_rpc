@@ -67,16 +67,17 @@ struct hmr_rdma_transport{
 	struct hmr_rdma_transport *accept_rdma_trans;
 };
 
-struct hmr_rdma_transport_operations{
-	int		(*init)();
-	int		(*release)();
-	struct hmr_rdma_transport*	(*create)(struct hmr_context *ctx);
-	int		(*connect)(struct hmr_rdma_transport* rdma_trans,
-								const char *url,const char*port);
-	int		(*listen)(struct hmr_rdma_transport* rdma_trans);
-	struct hmr_rdma_transport	*(*accept)(struct hmr_rdma_transport *rdma_trans);
-	int 	(*send)(struct hmr_rdma_transport* rdma_trans);
-};
+int hmr_rdma_init();
 
+int hmr_rdma_release();
 
+struct hmr_rdma_transport *hmr_rdma_create(struct hmr_context *ctx);
+
+int hmr_rdma_connect(struct hmr_rdma_transport* rdma_trans, const char *url, const char*port);
+								
+int hmr_rdma_listen(struct hmr_rdma_transport *rdma_trans);
+	
+struct hmr_rdma_transport *hmr_rdma_accept(struct hmr_rdma_transport *rdma_trans);
+
+int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans);
 #endif

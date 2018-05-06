@@ -15,10 +15,6 @@ static int rdma_num_devices=0;
 static int test_num=0;
 LIST_HEAD(dev_list);
 
-static struct hmr_rdma_transport *hmr_rdma_transport_create(struct hmr_context *ctx);
-static struct hmr_rdma_transport *hmr_rdma_transport_accept(struct hmr_rdma_transport *rdma_trans);
-
-
 static struct hmr_device *hmr_rdma_dev_init(struct ibv_context *verbs)
 {
 	struct hmr_device *dev;
@@ -54,7 +50,7 @@ exit:
 	return dev;
 }
 
-static int hmr_rdma_transport_init()
+int hmr_rdma_init()
 {
 	struct ibv_context **ctx_list;
 	struct hmr_device *dev;
@@ -89,8 +85,22 @@ static int hmr_rdma_transport_init()
 	return 0;
 }
 
-static int hmr_rdma_transport_release()
+static void hmr_rdma_dev_release(struct hmr_device *dev)
 {
+	list_del(&dev->dev_list_entry);
+	ibv_dealloc_pd(dev->pd);
+	free(dev);
+}
+
+int hmr_rdma_release()
+{
+	struct hmr_device	*dev, *next;
+
+	/* free devices */
+	list_for_each_entry_safe(dev, next, &dev_list, dev_list_entry) {
+		list_del_init(&dev->dev_list_entry);
+		hmr_rdma_dev_release(dev);
+	}
 	return 0;
 }
 
@@ -105,32 +115,6 @@ static struct hmr_device *hmr_device_lookup(struct ibv_context *verbs)
 	}
 
 	return NULL;
-}
-
-static int on_cm_addr_resolved(struct rdma_cm_event *event, struct hmr_rdma_transport *rdma_trans)
-{
-	int retval=0;
-
-	rdma_trans->device=hmr_device_lookup(rdma_trans->cm_id->verbs);
-	if(!rdma_trans->device){
-		ERROR_LOG("not found the hmr device.");
-		return -1;
-	}
-
-	INFO_LOG("RDMA Register Memory");
-	rdma_trans->normal_mempool=hmr_mempool_create(rdma_trans,0);
-#ifdef HMR_NVM_ENABLE
-	rdma_trans->nvm_buffer=hmr_mempool_create(rdma_trans,0);
-	rdma_trans->nvm_mempool=hmr_mempool_create(rdma_trans,1);
-#endif 
-
-	retval=rdma_resolve_route(rdma_trans->cm_id, ROUTE_RESOLVE_TIMEOUT);
-	if(retval){
-		ERROR_LOG("RDMA resolve route error.");
-		return retval;
-	}
-
-	return retval;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -151,7 +135,6 @@ const char *ibv_wc_opcode_str(enum ibv_wc_opcode opcode)
 	default:			return "IBV_WC_UNKNOWN";
 	};
 }
-
 
 static void hmr_cq_comp_channel_handler(int fd, void *data)
 {
@@ -347,6 +330,34 @@ static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans)
 		ERROR_LOG("ibv post recv error.");
 	}
 }
+
+static int on_cm_addr_resolved(struct rdma_cm_event *event, struct hmr_rdma_transport *rdma_trans)
+{
+	int retval=0;
+
+	rdma_trans->device=hmr_device_lookup(rdma_trans->cm_id->verbs);
+	if(!rdma_trans->device){
+		ERROR_LOG("not found the hmr device.");
+		return -1;
+	}
+
+	INFO_LOG("RDMA Register Memory");
+	rdma_trans->normal_mempool=hmr_mempool_create(rdma_trans,0);
+#ifdef HMR_NVM_ENABLE
+	rdma_trans->nvm_buffer=hmr_mempool_create(rdma_trans,0);
+	rdma_trans->nvm_mempool=hmr_mempool_create(rdma_trans,1);
+#endif 
+
+	retval=rdma_resolve_route(rdma_trans->cm_id, ROUTE_RESOLVE_TIMEOUT);
+	if(retval){
+		ERROR_LOG("RDMA resolve route error.");
+		return retval;
+	}
+
+	return retval;
+}
+
+
 /**
  * @param[in]
  * 
@@ -396,7 +407,7 @@ static int on_cm_connect_request(struct rdma_cm_event *event, struct hmr_rdma_tr
 	int retval=0;
 
 	INFO_LOG("event id %p rdma_trans cm_id %p event_listenid %p",event->id,rdma_trans->cm_id,event->listen_id);
-	accept_rdma_trans=hmr_rdma_transport_create(rdma_trans->ctx);
+	accept_rdma_trans=hmr_rdma_create(rdma_trans->ctx);
 	if(!accept_rdma_trans){
 		ERROR_LOG("rdma trans process connect request error.");
 		return -1;
@@ -420,42 +431,6 @@ static int on_cm_connect_request(struct rdma_cm_event *event, struct hmr_rdma_tr
 	rdma_trans->accept_rdma_trans=accept_rdma_trans;
 	
 	return retval;
-}
-
-static int hmr_rdma_transport_send(struct hmr_rdma_transport *rdma_trans)
-{
-	struct ibv_send_wr send_wr,*bad_wr=NULL;
-	struct ibv_sge sge;
-	int err=0;
-
-	while(rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_CONNECTED){
-		if(rdma_trans->trans_state>HMR_RDMA_TRANSPORT_STATE_CONNECTED)
-			return -1;
-	}
-	
-	if(rdma_trans->is_client)
-		snprintf(rdma_trans->normal_mempool->send_region,MAX_MEM_SIZE,"message from client.");
-	else
-		snprintf(rdma_trans->normal_mempool->send_region,MAX_MEM_SIZE,"message from server.");
-	
-	memset(&send_wr,0,sizeof(send_wr));
-
-	send_wr.wr_id=(uintptr_t)rdma_trans;
-	send_wr.num_sge=1;
-	send_wr.opcode=IBV_WR_SEND;
-	send_wr.sg_list=&sge;
-	send_wr.send_flags=IBV_SEND_SIGNALED;
-
-	sge.addr=(uintptr_t)rdma_trans->normal_mempool->send_region;
-	sge.length=MAX_MEM_SIZE;
-	sge.lkey=rdma_trans->normal_mempool->send_mr->lkey;
-	
-	err=ibv_post_send(rdma_trans->qp, &send_wr, &bad_wr);
-	if(err){
-		ERROR_LOG("ibv post send error.");
-	}
-	
-	return 0;
 }
 
 static int on_cm_established(struct rdma_cm_event *event, struct hmr_rdma_transport *rdma_trans)
@@ -559,7 +534,7 @@ static void hmr_rdma_event_channel_handler(int fd,void *data)
 		ERROR_LOG("RDMA get cm event error.");
 }
 
-static int hmr_init_rdma_event_channel(struct hmr_rdma_transport *rdma_trans)
+static int hmr_rdma_event_channel_init(struct hmr_rdma_transport *rdma_trans)
 {
 	int flags,retval=0;
 	
@@ -589,7 +564,7 @@ cleanec:
 	return retval;
 }
 
-static struct hmr_rdma_transport *hmr_rdma_transport_create(struct hmr_context *ctx)
+struct hmr_rdma_transport *hmr_rdma_create(struct hmr_context *ctx)
 {
 	struct hmr_rdma_transport *rdma_trans;
 
@@ -600,12 +575,12 @@ static struct hmr_rdma_transport *hmr_rdma_transport_create(struct hmr_context *
 	}
 	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_INIT;
 	rdma_trans->ctx=ctx;
-	hmr_init_rdma_event_channel(rdma_trans);
+	hmr_rdma_event_channel_init(rdma_trans);
 
 	return rdma_trans;
 }
 
-static int hmr_init_port_uri(struct hmr_rdma_transport *rdma_trans,
+static int hmr_port_uri_init(struct hmr_rdma_transport *rdma_trans,
 						const char *url,const char *port)
 {
 	struct sockaddr_in peer_addr;
@@ -626,8 +601,8 @@ exit:
 	return retval;
 }
 
-static int hmr_rdma_transport_connect(struct hmr_rdma_transport* rdma_trans,
-								const char *url,const char*port)
+int hmr_rdma_connect(struct hmr_rdma_transport* rdma_trans,
+								const char *url, const char*port)
 {
 	int retval=0;
 	if(!url||!port){
@@ -635,7 +610,7 @@ static int hmr_rdma_transport_connect(struct hmr_rdma_transport* rdma_trans,
 		return -1;
 	}
 
-	retval=hmr_init_port_uri(rdma_trans, url, port);
+	retval=hmr_port_uri_init(rdma_trans, url, port);
 	if(retval<0){
 		ERROR_LOG("rdma init port uri error.");
 		return retval;
@@ -668,7 +643,7 @@ cleanrdmatrans:
 	return retval;
 }
 
-static int hmr_rdma_transport_listen(struct hmr_rdma_transport *rdma_trans)
+int hmr_rdma_listen(struct hmr_rdma_transport *rdma_trans)
 {
 	int retval=0,backlog,listen_port;
 	struct sockaddr_in addr;
@@ -711,7 +686,7 @@ cleanid:
 	return retval;
 }
 
-static struct hmr_rdma_transport *hmr_rdma_transport_accept(struct hmr_rdma_transport *rdma_trans)
+struct hmr_rdma_transport *hmr_rdma_accept(struct hmr_rdma_transport *rdma_trans)
 {
 	int err=0;
 	struct rdma_conn_param conn_param;
@@ -744,13 +719,39 @@ static struct hmr_rdma_transport *hmr_rdma_transport_accept(struct hmr_rdma_tran
 	return accept_rdma_trans;
 }
 
+int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans)
+{
+	struct ibv_send_wr send_wr,*bad_wr=NULL;
+	struct ibv_sge sge;
+	int err=0;
 
-struct hmr_rdma_transport_operations rdma_trans_ops={
-	.init		= hmr_rdma_transport_init,
-	.release	= hmr_rdma_transport_release,
-	.create		= hmr_rdma_transport_create,
-	.connect	= hmr_rdma_transport_connect,
-	.listen		= hmr_rdma_transport_listen,
-	.accept		= hmr_rdma_transport_accept,
-	.send		= hmr_rdma_transport_send
-};	
+	while(rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_CONNECTED){
+		if(rdma_trans->trans_state>HMR_RDMA_TRANSPORT_STATE_CONNECTED)
+			return -1;
+	}
+	
+	if(rdma_trans->is_client)
+		snprintf(rdma_trans->normal_mempool->send_region,MAX_MEM_SIZE,"message from client.");
+	else
+		snprintf(rdma_trans->normal_mempool->send_region,MAX_MEM_SIZE,"message from server.");
+	
+	memset(&send_wr,0,sizeof(send_wr));
+
+	send_wr.wr_id=(uintptr_t)rdma_trans;
+	send_wr.num_sge=1;
+	send_wr.opcode=IBV_WR_SEND;
+	send_wr.sg_list=&sge;
+	send_wr.send_flags=IBV_SEND_SIGNALED;
+
+	sge.addr=(uintptr_t)rdma_trans->normal_mempool->send_region;
+	sge.length=MAX_MEM_SIZE;
+	sge.lkey=rdma_trans->normal_mempool->send_mr->lkey;
+	
+	err=ibv_post_send(rdma_trans->qp, &send_wr, &bad_wr);
+	if(err){
+		ERROR_LOG("ibv post send error.");
+	}
+	
+	return 0;
+}
+
