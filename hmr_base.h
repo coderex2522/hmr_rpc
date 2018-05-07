@@ -27,10 +27,24 @@ enum hmr_log_level{
 	HMR_LOG_LEVEL_TRACE,
 	HMR_LOG_LEVEL_LAST
 };
+	
+enum hmr_msg_type{
+	HMR_MSG_NORMAL,
+	HMR_MSG_READ,
+	HMR_MSG_WRITE,
+	HMR_MSG_DONE
+};
 
-/**
- * check the rdma device is exist.
- */
-int hmr_rdma_dev_is_exist();
+struct hmr_iovec{
+	void *base;
+	int length;
+	struct hmr_iovec *next;
+};
+
+struct hmr_msg{
+	enum hmr_msg_type msg_type;
+	struct hmr_iovec *data;
+	int nents;
+};
 
 #endif

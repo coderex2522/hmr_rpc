@@ -14,14 +14,14 @@ struct hmr_mempool *hmr_mempool_create(struct hmr_rdma_transport *rdma_trans, in
 		ERROR_LOG("allocate memory error.");
 		return NULL;
 	}
-	
+	mempool->sr_used_size=0;
 	mempool->send_region=malloc(ALLOC_MEM_SIZE*2);
 	if(!mempool->send_region){
 		 ERROR_LOG("allocate memory error.");
 		 goto cleanmempool;
 	}
 	mempool->recv_region=mempool->send_region+ALLOC_MEM_SIZE;
-
+	
 	mempool->send_mr=ibv_reg_mr(rdma_trans->device->pd, mempool->send_region, 
 							ALLOC_MEM_SIZE,
 							IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | 
@@ -67,5 +67,44 @@ void hmr_mempool_release(struct hmr_mempool *mempool)
 
 	free(mempool->send_region);
 	//free(mempool->recv_region);
+}
+
+
+static void *hmr_mempool_alloc_saddr(struct hmr_mempool *mempool, int length)
+{
+	void *addr=NULL;
+	
+	if(mempool->sr_used_size+length > ALLOC_MEM_SIZE){
+		ERROR_LOG("mr memory is full.");
+		mempool->sr_used_size=0;
+	}
+
+	addr=mempool->send_region+mempool->sr_used_size;
+	mempool->sr_used_size+=length;
+
+	return addr;
+}
+
+static void *hmr_mempool_alloc_raddr(struct hmr_mempool *mempool, int length)
+{
+	void *addr=NULL;
+	
+	if(mempool->rr_used_size+length > ALLOC_MEM_SIZE){
+		INFO_LOG("mr memory is full.");
+		mempool->rr_used_size=0;
+	}
+
+	addr=mempool->recv_region+mempool->rr_used_size;
+	mempool->rr_used_size+=length;
+
+	return addr;
+}
+
+void *hmr_mempool_alloc_addr(struct hmr_mempool *mempool, int length, int is_send)
+{
+	if(is_send)
+		return hmr_mempool_alloc_saddr(mempool, length);
+	else
+		return hmr_mempool_alloc_raddr(mempool, length);
 }
 

@@ -12,10 +12,10 @@ hmr_mem.o:hmr_mem.c
 hmr_rdma_transport.o:hmr_rdma_transport.c
 	gcc -c $^ -o $@ ${LDFLAGS}
 	
-client:hmr_log.o hmr_context.o hmr_mem.o hmr_rdma_transport.o client.o
+client:hmr_log.o hmr_context.o hmr_mem.o hmr_rdma_transport.o hmr_task.o client.o
 	gcc	$^ -o $@ ${LDFLAGS}
 
-server:hmr_log.o hmr_context.o hmr_mem.o hmr_rdma_transport.o server.o
+server:hmr_log.o hmr_context.o hmr_mem.o hmr_rdma_transport.o hmr_task.o server.o
 	gcc $^ -o $@ ${LDFLAGS}
 	
 clean:

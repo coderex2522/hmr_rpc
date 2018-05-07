@@ -10,6 +10,7 @@
 #include "hmr_log.h"
 #include "hmr_rdma_transport.h"
 #include "hmr_mem.h"
+#include "hmr_task.h"
 
 static int rdma_num_devices=0;
 static int test_num=0;
@@ -136,6 +137,36 @@ const char *ibv_wc_opcode_str(enum ibv_wc_opcode opcode)
 	};
 }
 
+static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans)
+{
+	struct ibv_recv_wr recv_wr,*bad_wr=NULL;
+	struct hmr_task *recv_task;
+	int err=0;
+	struct ibv_sge sge;
+
+	recv_task=hmr_recv_task_create(rdma_trans);
+	if(!recv_task){
+		ERROR_LOG("post recv error.");
+		return ;
+	}
+	
+	/*when call the ibv_poll_cq,we can get the context from wr_id*/
+	recv_wr.wr_id=(uintptr_t)recv_task;
+	recv_wr.next=NULL;
+	recv_wr.sg_list=&sge;
+	recv_wr.num_sge=1;
+
+	sge.addr=(uintptr_t)recv_task->sge_list[0].addr;
+	sge.length=recv_task->sge_list[0].length;
+	sge.lkey=recv_task->sge_list[0].lkey;
+
+	err=ibv_post_recv(rdma_trans->qp, &recv_wr, &bad_wr);
+	if(err){
+		ERROR_LOG("ibv post recv error.");
+	}
+}
+
+
 static void hmr_cq_comp_channel_handler(int fd, void *data)
 {
 	struct hmr_cq *hcq=(struct hmr_cq*)data;
@@ -143,7 +174,8 @@ static void hmr_cq_comp_channel_handler(int fd, void *data)
 	void *cq_context;
 	struct ibv_wc wc;
 	struct hmr_rdma_transport *rdma_trans;
-	int err=0;
+	struct hmr_task *task;
+	int i,err=0;
 
 	err=ibv_get_cq_event(hcq->comp_channel, &cq, &cq_context);
 	if(err){
@@ -160,15 +192,24 @@ static void hmr_cq_comp_channel_handler(int fd, void *data)
 	
 	while(ibv_poll_cq(hcq->cq,1,&wc)){
 		if(wc.status==IBV_WC_SUCCESS){
-			rdma_trans=(struct hmr_rdma_transport*)(uintptr_t)wc.wr_id;
+			task=(struct hmr_task*)(uintptr_t)wc.wr_id;
+			rdma_trans=task->rdma_trans;
 			switch (wc.opcode)
 			{
 			case IBV_WC_SEND:
-				INFO_LOG("IBV_WC_SEND send the content [%s] success.",rdma_trans->normal_mempool->send_region);
+				INFO_LOG("IBV_WC_SEND send the content [%s] success. testnums %d",task->sge_list[0].addr,test_num);
 				test_num++;
 				break;
 			case IBV_WC_RECV:
-				INFO_LOG("IBV_WC_RECV recv the content [%s] success.",rdma_trans->normal_mempool->recv_region);
+				INFO_LOG("IBV_WC_RECV recv the content [%s] success.testnum %d",task->sge_list[0].addr,test_num);
+				
+				rdma_trans->cur_recv_num--;
+				if(rdma_trans->cur_recv_num<MIN_RECV_NUM){
+					for(i=0;i<INC_RECV_NUM;i++){
+						hmr_post_recv(rdma_trans);
+						rdma_trans->cur_recv_num++;
+					}
+				}
 				test_num++;
 				break;
 			case IBV_WC_RDMA_WRITE:
@@ -179,11 +220,15 @@ static void hmr_cq_comp_channel_handler(int fd, void *data)
 				ERROR_LOG("unknown opcode:%s",ibv_wc_opcode_str(wc.opcode));
 				break;
 			}
-			if(test_num==2&&rdma_trans->is_client)
+			if(test_num==4&&rdma_trans->is_client)
 				rdma_disconnect(rdma_trans->cm_id);
+			
 		}
 		else{
-			ERROR_LOG("wc status [%s] is error.",ibv_wc_status_str(wc.status));
+			if(wc.status==IBV_WC_WR_FLUSH_ERR)
+				INFO_LOG("Flush error.");
+			else
+				ERROR_LOG("wc status [%s] is error.",ibv_wc_status_str(wc.status));
 		}
 	}
 	
@@ -277,7 +322,7 @@ static int hmr_qp_create(struct hmr_rdma_transport *rdma_trans)
 	qp_init_attr.recv_cq=hcq->cq;
 
 	qp_init_attr.cap.max_send_wr=MAX_SEND_WR;
-	qp_init_attr.cap.max_send_sge=min(rdma_trans->device->device_attr.max_sge,4);
+	qp_init_attr.cap.max_send_sge=min(rdma_trans->device->device_attr.max_sge,MAX_SEND_SGE);
 	
 	qp_init_attr.cap.max_recv_wr=MAX_RECV_WR;
 	qp_init_attr.cap.max_recv_sge=1;
@@ -309,27 +354,6 @@ static void hmr_qp_release(struct hmr_rdma_transport* rdma_trans)
 	}
 }
 
-static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans)
-{
-	struct ibv_recv_wr recv_wr,*bad_wr=NULL;
-	int err=0;
-	struct ibv_sge sge;
-
-	/*when call the ibv_poll_cq,we can get the context from wr_id*/
-	recv_wr.wr_id=(uintptr_t)rdma_trans;
-	recv_wr.next=NULL;
-	recv_wr.sg_list=&sge;
-	recv_wr.num_sge=1;
-
-	sge.addr=(uintptr_t)rdma_trans->normal_mempool->recv_region;
-	sge.length=MAX_MEM_SIZE;
-	sge.lkey=rdma_trans->normal_mempool->recv_mr->lkey;
-
-	err=ibv_post_recv(rdma_trans->qp, &recv_wr, &bad_wr);
-	if(err){
-		ERROR_LOG("ibv post recv error.");
-	}
-}
 
 static int on_cm_addr_resolved(struct rdma_cm_event *event, struct hmr_rdma_transport *rdma_trans)
 {
@@ -366,7 +390,7 @@ static int on_cm_addr_resolved(struct rdma_cm_event *event, struct hmr_rdma_tran
 static int on_cm_route_resolved(struct rdma_cm_event *event, struct hmr_rdma_transport *rdma_trans)
 {
 	struct rdma_conn_param conn_param;
-	int retval=0;
+	int i,retval=0;
 	
 	retval=hmr_qp_create(rdma_trans);
 	if(retval){
@@ -391,7 +415,10 @@ static int on_cm_route_resolved(struct rdma_cm_event *event, struct hmr_rdma_tra
 		goto cleanqp;
 	}
 
-	hmr_post_recv(rdma_trans);
+	for(i=0;i<MIN_RECV_NUM*2;i++){
+		hmr_post_recv(rdma_trans);
+		rdma_trans->cur_recv_num++;
+	}
 	return retval;
 	
 cleanqp:
@@ -576,7 +603,7 @@ struct hmr_rdma_transport *hmr_rdma_create(struct hmr_context *ctx)
 	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_INIT;
 	rdma_trans->ctx=ctx;
 	hmr_rdma_event_channel_init(rdma_trans);
-
+	INIT_LIST_HEAD(&rdma_trans->send_task_list);
 	return rdma_trans;
 }
 
@@ -688,7 +715,7 @@ cleanid:
 
 struct hmr_rdma_transport *hmr_rdma_accept(struct hmr_rdma_transport *rdma_trans)
 {
-	int err=0;
+	int i,err=0;
 	struct rdma_conn_param conn_param;
 	struct hmr_rdma_transport *accept_rdma_trans;
 
@@ -714,38 +741,41 @@ struct hmr_rdma_transport *hmr_rdma_accept(struct hmr_rdma_transport *rdma_trans
 	accept_rdma_trans->nvm_buffer=hmr_mempool_create(accept_rdma_trans,0);
 	accept_rdma_trans->nvm_mempool=hmr_mempool_create(accept_rdma_trans,1);
 #endif
-	hmr_post_recv(accept_rdma_trans);
 
+	/*pre commit some post recv*/
+	for(i=0;i<MIN_RECV_NUM*2;i++){
+		hmr_post_recv(accept_rdma_trans);
+		accept_rdma_trans->cur_recv_num++;
+	}
 	return accept_rdma_trans;
 }
 
-int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans)
+int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg msg)
 {
 	struct ibv_send_wr send_wr,*bad_wr=NULL;
-	struct ibv_sge sge;
-	int err=0;
+	struct ibv_sge sge[MAX_SEND_SGE];
+	struct hmr_task *send_task;
+	int i,err=0;
 
 	while(rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_CONNECTED){
 		if(rdma_trans->trans_state>HMR_RDMA_TRANSPORT_STATE_CONNECTED)
 			return -1;
 	}
 	
-	if(rdma_trans->is_client)
-		snprintf(rdma_trans->normal_mempool->send_region,MAX_MEM_SIZE,"message from client.");
-	else
-		snprintf(rdma_trans->normal_mempool->send_region,MAX_MEM_SIZE,"message from server.");
-	
+	send_task=hmr_send_task_create(rdma_trans,&msg);
 	memset(&send_wr,0,sizeof(send_wr));
 
-	send_wr.wr_id=(uintptr_t)rdma_trans;
-	send_wr.num_sge=1;
+	send_wr.wr_id=(uintptr_t)send_task;
+	send_wr.num_sge=send_task->nents;
 	send_wr.opcode=IBV_WR_SEND;
-	send_wr.sg_list=&sge;
+	send_wr.sg_list=&sge[0];
 	send_wr.send_flags=IBV_SEND_SIGNALED;
 
-	sge.addr=(uintptr_t)rdma_trans->normal_mempool->send_region;
-	sge.length=MAX_MEM_SIZE;
-	sge.lkey=rdma_trans->normal_mempool->send_mr->lkey;
+	for(i=0;i<send_task->nents;i++){
+		sge[i].addr=(uintptr_t)send_task->sge_list[i].addr;
+		sge[i].length=send_task->sge_list[i].length;
+		sge[i].lkey=send_task->sge_list[i].lkey;
+	}
 	
 	err=ibv_post_send(rdma_trans->qp, &send_wr, &bad_wr);
 	if(err){

@@ -9,12 +9,30 @@
 #include "hmr_epoll.h"
 #include "hmr_context.h"
 
+
+void build_msg(struct hmr_msg *msg)
+{
+	msg->nents=1;
+	msg->data=(struct hmr_iovec*)calloc(1,sizeof(struct hmr_iovec));
+	if(!msg->data){
+		ERROR_LOG("allocate memory error.");
+		return ;
+	}
+	msg->data->base=strdup("hello wolrd client.");
+	msg->data->length=strlen(msg->data->base);
+	msg->data->next=NULL;
+}
+
+
 int main(int argc,char **argv)
 {
 	struct hmr_context *ctx;
 	struct hmr_rdma_transport *rdma_trans;
+	struct hmr_msg msg;
 	int err=0;
 
+	build_msg(&msg);
+	
 	hmr_rdma_init();
 
 	ctx=hmr_context_create();
@@ -26,7 +44,11 @@ int main(int argc,char **argv)
 		ERROR_LOG("pthread create error.");
 		return -1;
 	}
-	hmr_rdma_send(rdma_trans);
+	hmr_rdma_send(rdma_trans, msg);
+	
+	msg.data->base=strdup("hello wolrd client copy.");
+	msg.data->length=strlen(msg.data->base);
+	hmr_rdma_send(rdma_trans, msg);
 	pthread_join(ctx->epoll_pthread,NULL);
 
 	hmr_rdma_release();

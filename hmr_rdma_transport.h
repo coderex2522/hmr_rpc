@@ -11,8 +11,15 @@
 #define MAX_SEND_WR 256
 #define MAX_RECV_WR 256
 
+#define MAX_SEND_SGE 4
+
+#define MAX_RECV_SIZE 100
 /*set the memory max size*/
 #define MAX_MEM_SIZE 1024
+
+
+#define MIN_RECV_NUM 3
+#define INC_RECV_NUM 2
 
 extern struct list_head dev_list;
 
@@ -42,7 +49,7 @@ struct hmr_cq{
 	/*add the fd of comp_channel into the ctx*/
 	struct hmr_context *ctx;
 };
- 
+
 struct hmr_rdma_transport{
 	struct sockaddr_in	peer_addr;
 	struct sockaddr_in local_addr;
@@ -63,7 +70,10 @@ struct hmr_rdma_transport{
 	struct hmr_mempool *nvm_mempool;
 	struct hmr_mempool *nvm_buffer;
 #endif
-
+	/*pre commit post recv num*/
+	int cur_recv_num;
+	
+	struct list_head send_task_list;
 	struct hmr_rdma_transport *accept_rdma_trans;
 };
 
@@ -79,5 +89,6 @@ int hmr_rdma_listen(struct hmr_rdma_transport *rdma_trans);
 	
 struct hmr_rdma_transport *hmr_rdma_accept(struct hmr_rdma_transport *rdma_trans);
 
-int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans);
+int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg msg);
+
 #endif
