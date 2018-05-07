@@ -77,9 +77,9 @@ struct hmr_rdma_transport{
 	struct hmr_rdma_transport *accept_rdma_trans;
 };
 
-int hmr_rdma_init();
+void hmr_rdma_init();
 
-int hmr_rdma_release();
+void hmr_rdma_release();
 
 struct hmr_rdma_transport *hmr_rdma_create(struct hmr_context *ctx);
 

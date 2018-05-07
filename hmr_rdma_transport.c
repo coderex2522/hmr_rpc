@@ -14,6 +14,9 @@
 
 static int rdma_num_devices=0;
 
+pthread_once_t init_pthread=PTHREAD_ONCE_INIT;
+pthread_once_t release_pthread=PTHREAD_ONCE_INIT;
+
 LIST_HEAD(dev_list);
 
 static struct hmr_device *hmr_rdma_dev_init(struct ibv_context *verbs)
@@ -51,7 +54,7 @@ exit:
 	return dev;
 }
 
-int hmr_rdma_init()
+static void hmr_rdma_init_handle(void)
 {
 	struct ibv_context **ctx_list;
 	struct hmr_device *dev;
@@ -61,7 +64,7 @@ int hmr_rdma_init()
 	if(!ctx_list)
 	{
 		ERROR_LOG("Failed to get the rdma device list.");
-		return -1;
+		return ;
 	}
 	
 	rdma_num_devices=num_devices;
@@ -83,9 +86,13 @@ int hmr_rdma_init()
 	}
 
 	rdma_free_devices(ctx_list);
-	return 0;
 }
 
+void hmr_rdma_init()
+{
+	pthread_once(&init_pthread,hmr_rdma_init_handle);
+}
+	
 static void hmr_rdma_dev_release(struct hmr_device *dev)
 {
 	list_del(&dev->dev_list_entry);
@@ -93,7 +100,7 @@ static void hmr_rdma_dev_release(struct hmr_device *dev)
 	free(dev);
 }
 
-int hmr_rdma_release()
+static void hmr_rdma_release_handle(void)
 {
 	struct hmr_device	*dev, *next;
 
@@ -102,7 +109,11 @@ int hmr_rdma_release()
 		list_del_init(&dev->dev_list_entry);
 		hmr_rdma_dev_release(dev);
 	}
-	return 0;
+}
+
+void hmr_rdma_release()
+{
+	pthread_once(&release_pthread, hmr_rdma_release_handle);
 }
 
 static struct hmr_device *hmr_device_lookup(struct ibv_context *verbs)
@@ -456,6 +467,7 @@ static int on_cm_route_resolved(struct rdma_cm_event *event, struct hmr_rdma_tra
 cleanqp:
 	hmr_qp_release(rdma_trans);
 	rdma_trans->ctx->is_stop=1;
+	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_ERROR;
 	return retval;
 }
 
