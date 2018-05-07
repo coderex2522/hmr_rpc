@@ -32,7 +32,7 @@ enum hmr_msg_type{
 	HMR_MSG_NORMAL,
 	HMR_MSG_READ,
 	HMR_MSG_WRITE,
-	HMR_MSG_DONE
+	HMR_MSG_FINISH
 };
 
 struct hmr_iovec{

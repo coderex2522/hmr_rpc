@@ -48,6 +48,7 @@ int main(int argc,char **argv)
 	
 	msg.data->base=strdup("hello wolrd client copy.");
 	msg.data->length=strlen(msg.data->base);
+	msg.msg_type=HMR_MSG_FINISH;
 	hmr_rdma_send(rdma_trans, msg);
 	pthread_join(ctx->epoll_pthread,NULL);
 

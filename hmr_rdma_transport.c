@@ -13,7 +13,7 @@
 #include "hmr_task.h"
 
 static int rdma_num_devices=0;
-static int test_num=0;
+
 LIST_HEAD(dev_list);
 
 static struct hmr_device *hmr_rdma_dev_init(struct ibv_context *verbs)
@@ -166,6 +166,74 @@ static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans)
 	}
 }
 
+static void hmr_handle_close_connection(struct hmr_task *task, struct ibv_wc *wc)
+{
+	struct hmr_rdma_transport *rdma_trans=task->rdma_trans; 
+	struct hmr_msg msg;
+	struct hmr_iovec iovec;
+	
+	if(wc->opcode==IBV_WC_RECV&&task->task_type==HMR_TASK_FINISH){
+		msg.msg_type=HMR_MSG_FINISH+1;
+		msg.data=&iovec;
+		iovec.base=strdup("the connection is closing.");
+		iovec.length=strlen(iovec.base);
+		iovec.next=NULL;
+		msg.nents=1;
+		hmr_rdma_send(rdma_trans, msg);
+	}
+	else if(wc->opcode==IBV_WC_SEND&&task->task_type==HMR_TASK_DONE){
+		rdma_disconnect(rdma_trans->cm_id);
+	}
+	else if(wc->opcode==IBV_WC_RECV&&task->task_type==HMR_TASK_DONE){
+		rdma_disconnect(rdma_trans->cm_id);
+	}
+}
+
+static void hmr_wc_success_handler(struct ibv_wc *wc)
+{
+	struct hmr_task *task;
+	struct hmr_rdma_transport *rdma_trans;
+	int i;
+	
+	task=(struct hmr_task*)(uintptr_t)wc->wr_id;
+	rdma_trans=task->rdma_trans;
+	
+	switch (wc->opcode)
+	{
+	case IBV_WC_SEND:
+		INFO_LOG("IBV_WC_SEND send the content [%s] success.",task->sge_list[0].addr+sizeof(enum hmr_msg_type));
+		break;
+	case IBV_WC_RECV:
+		task->task_type=*(enum hmr_task_type*)task->sge_list[0].addr;
+		INFO_LOG("IBV_WC_RECV recv the content [%s] success.",task->sge_list[0].addr+sizeof(enum hmr_msg_type));
+		rdma_trans->cur_recv_num--;
+		if(rdma_trans->cur_recv_num<MIN_RECV_NUM){
+			for(i=0;i<INC_RECV_NUM;i++){
+				hmr_post_recv(rdma_trans);
+				rdma_trans->cur_recv_num++;
+			}
+		}
+		break;
+	case IBV_WC_RDMA_WRITE:
+		break;
+	case IBV_WC_RDMA_READ:
+		break;
+	default:
+		ERROR_LOG("unknown opcode:%s",ibv_wc_opcode_str(wc->opcode));
+		break;
+	}
+	if(task->task_type>=HMR_TASK_FINISH)
+		hmr_handle_close_connection(task, wc);
+}
+
+static void hmr_wc_error_handler(struct ibv_wc *wc)
+{
+	if(wc->status==IBV_WC_WR_FLUSH_ERR)
+		INFO_LOG("work request flush error.");
+	else
+		ERROR_LOG("wc status [%s] is error.",ibv_wc_status_str(wc->status));
+
+}
 
 static void hmr_cq_comp_channel_handler(int fd, void *data)
 {
@@ -173,9 +241,7 @@ static void hmr_cq_comp_channel_handler(int fd, void *data)
 	struct ibv_cq *cq;
 	void *cq_context;
 	struct ibv_wc wc;
-	struct hmr_rdma_transport *rdma_trans;
-	struct hmr_task *task;
-	int i,err=0;
+	int err=0;
 
 	err=ibv_get_cq_event(hcq->comp_channel, &cq, &cq_context);
 	if(err){
@@ -191,45 +257,11 @@ static void hmr_cq_comp_channel_handler(int fd, void *data)
 	}
 	
 	while(ibv_poll_cq(hcq->cq,1,&wc)){
-		if(wc.status==IBV_WC_SUCCESS){
-			task=(struct hmr_task*)(uintptr_t)wc.wr_id;
-			rdma_trans=task->rdma_trans;
-			switch (wc.opcode)
-			{
-			case IBV_WC_SEND:
-				INFO_LOG("IBV_WC_SEND send the content [%s] success. testnums %d",task->sge_list[0].addr,test_num);
-				test_num++;
-				break;
-			case IBV_WC_RECV:
-				INFO_LOG("IBV_WC_RECV recv the content [%s] success.testnum %d",task->sge_list[0].addr,test_num);
-				
-				rdma_trans->cur_recv_num--;
-				if(rdma_trans->cur_recv_num<MIN_RECV_NUM){
-					for(i=0;i<INC_RECV_NUM;i++){
-						hmr_post_recv(rdma_trans);
-						rdma_trans->cur_recv_num++;
-					}
-				}
-				test_num++;
-				break;
-			case IBV_WC_RDMA_WRITE:
-				break;
-			case IBV_WC_RDMA_READ:
-				break;
-			default:
-				ERROR_LOG("unknown opcode:%s",ibv_wc_opcode_str(wc.opcode));
-				break;
-			}
-			if(test_num==4&&rdma_trans->is_client)
-				rdma_disconnect(rdma_trans->cm_id);
-			
-		}
-		else{
-			if(wc.status==IBV_WC_WR_FLUSH_ERR)
-				INFO_LOG("Flush error.");
-			else
-				ERROR_LOG("wc status [%s] is error.",ibv_wc_status_str(wc.status));
-		}
+		if(wc.status==IBV_WC_SUCCESS)
+			hmr_wc_success_handler(&wc);
+		else
+			hmr_wc_error_handler(&wc);
+
 	}
 	
 }
@@ -763,6 +795,8 @@ int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg msg)
 	}
 	
 	send_task=hmr_send_task_create(rdma_trans,&msg);
+	send_task->task_type=msg.msg_type;
+		
 	memset(&send_wr,0,sizeof(send_wr));
 
 	send_wr.wr_id=(uintptr_t)send_task;

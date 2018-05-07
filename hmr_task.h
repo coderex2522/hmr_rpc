@@ -7,7 +7,16 @@ struct hmr_sge{
 	uint32_t		lkey;
 };
 
+enum hmr_task_type{
+	HMR_TASK_NORMAL,
+	HMR_TASK_READ,
+	HMR_TASK_WRITE,
+	HMR_TASK_FINISH,
+	HMR_TASK_DONE
+};
+	
 struct hmr_task{
+	enum hmr_task_type task_type;
 	struct hmr_sge *sge_list;
 	int nents;
 	struct hmr_rdma_transport *rdma_trans;
