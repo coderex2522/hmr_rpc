@@ -194,9 +194,11 @@ static void hmr_handle_close_connection(struct hmr_task *task, struct ibv_wc *wc
 		hmr_rdma_send(rdma_trans, msg);
 	}
 	else if(wc->opcode==IBV_WC_SEND&&task->task_type==HMR_TASK_DONE){
+		INFO_LOG("call disconnect.");
 		rdma_disconnect(rdma_trans->cm_id);
 	}
 	else if(wc->opcode==IBV_WC_RECV&&task->task_type==HMR_TASK_DONE){
+		INFO_LOG("call disconnect.");
 		rdma_disconnect(rdma_trans->cm_id);
 	}
 }
@@ -213,9 +215,7 @@ static void hmr_exchange_mr_info(struct hmr_rdma_transport *rdma_trans)
 	iovec.next=NULL;
 	iovec.base=rdma_trans->normal_mempool->recv_mr;
 	iovec.length=sizeof(struct ibv_mr);
-	//iovec.base=strdup("hello nihao ma?");
-	//iovec.length=strlen(iovec.base)+1;
-	INFO_LOG("%s",__func__);
+	INFO_LOG("%s recv addr %p",__func__,rdma_trans->normal_mempool->recv_mr->addr);
 	hmr_rdma_send(rdma_trans, msg);		
 }
 
@@ -225,6 +225,7 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 	struct hmr_task *task;
 	struct hmr_rdma_transport *rdma_trans;
 	struct ibv_mr *mr;
+	char *str;
 	int i;
 	
 	task=(struct hmr_task*)(uintptr_t)wc->wr_id;
@@ -245,6 +246,11 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 				rdma_trans->cur_recv_num++;
 			}
 		}
+		str=(char*)(task->sge_list[0].addr+sizeof(enum hmr_msg_type));
+		if(str[0]=='1'||str[0]=='2'){
+			INFO_LOG("haha. %p",rdma_trans->normal_mempool->recv_mr->addr);
+			INFO_LOG("content %s",rdma_trans->normal_mempool->recv_mr->addr+sizeof(enum hmr_msg_type));
+		}
 		break;
 	case IBV_WC_RDMA_WRITE:
 		break;
@@ -257,7 +263,6 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 	if(task->task_type>=HMR_TASK_FINISH)
 		hmr_handle_close_connection(task, wc);
 	if(task->task_type==HMR_TASK_MR){
-		INFO_LOG("WC HMR_TASK MR START");
 		if(wc->opcode==IBV_WC_SEND&&rdma_trans->trans_state==HMR_RDMA_TRANSPORT_STATE_CONNECTED)
 			rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_SCONNECTED;
 		
@@ -269,7 +274,6 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 				hmr_exchange_mr_info(rdma_trans);
 			rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_RCONNECTED;
 		}
-		INFO_LOG("WC HMR_TASK MR END.");
 	}
 }
 
@@ -832,6 +836,46 @@ struct hmr_rdma_transport *hmr_rdma_accept(struct hmr_rdma_transport *rdma_trans
 	return accept_rdma_trans;
 }
 
+static int hmr_msg_check(struct hmr_rdma_transport *rdma_trans, struct hmr_msg *msg)
+{
+	int retval=0;
+
+	if(msg->msg_type!=HMR_MSG_READ&&msg->msg_type!=HMR_MSG_WRITE){
+		while(rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_CONNECTED&&
+			rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_SCONNECTED&&
+			rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_RCONNECTED){
+			
+			if(rdma_trans->trans_state>HMR_RDMA_TRANSPORT_STATE_RCONNECTED)
+				return -1;
+		}
+	}
+	else{
+		while(rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_RCONNECTED){
+			if(rdma_trans->trans_state>HMR_RDMA_TRANSPORT_STATE_RCONNECTED)
+			return -1;
+		}
+	}
+
+	return retval;
+}
+
+static enum ibv_wr_opcode hmr_get_msg_opcode(struct hmr_msg *msg)
+{
+	enum ibv_wr_opcode retval=IBV_WR_SEND;
+	
+	switch (msg->msg_type)
+	{
+	case HMR_MSG_READ:
+		retval=IBV_WR_RDMA_READ;
+		break;
+	case HMR_MSG_WRITE:
+		retval=IBV_WR_RDMA_WRITE;
+		break;
+	}
+	
+	return retval;
+}
+
 int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg msg)
 {
 	struct ibv_send_wr send_wr,*bad_wr=NULL;
@@ -840,11 +884,10 @@ int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg msg)
 	struct ibv_mr *mr;
 	int i,err=0;
 
-	while(rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_CONNECTED&&
-		rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_SCONNECTED&&
-		rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_RCONNECTED){
-		if(rdma_trans->trans_state>HMR_RDMA_TRANSPORT_STATE_RCONNECTED)
-			return -1;
+	err=hmr_msg_check(rdma_trans, &msg);
+	if(err){
+		ERROR_LOG("rdma transport exit error.");
+		return -1;
 	}
 
 	send_task=hmr_send_task_create(rdma_trans,&msg);
@@ -854,10 +897,16 @@ int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg msg)
 
 	send_wr.wr_id=(uintptr_t)send_task;
 	send_wr.num_sge=send_task->nents;
-	send_wr.opcode=IBV_WR_SEND;
+	send_wr.opcode=hmr_get_msg_opcode(&msg);
 	send_wr.sg_list=&sge[0];
 	send_wr.send_flags=IBV_SEND_SIGNALED;
 
+	if(send_wr.opcode==IBV_WR_RDMA_READ||send_wr.opcode==IBV_WR_RDMA_WRITE){
+		INFO_LOG("%s post rdma write. %p",__func__,rdma_trans->peer_info.normal_mr.addr);
+		send_wr.wr.rdma.remote_addr=(uintptr_t)(rdma_trans->peer_info.normal_mr.addr);
+		send_wr.wr.rdma.rkey=rdma_trans->peer_info.normal_mr.rkey;
+	}
+	
 	for(i=0;i<send_task->nents;i++){
 		sge[i].addr=(uintptr_t)send_task->sge_list[i].addr;
 		sge[i].length=send_task->sge_list[i].length;

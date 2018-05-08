@@ -52,6 +52,26 @@ int main(int argc,char **argv)
 	msg.msg_type=HMR_MSG_NORMAL;
 	hmr_rdma_send(rdma_trans, msg);
 
+	msg.data->base=strdup("rdma write huststephen.");
+	msg.data->length=strlen(msg.data->base)+1;
+	msg.msg_type=HMR_MSG_WRITE;
+	hmr_rdma_send(rdma_trans, msg);
+	
+
+	msg.data->base=strdup("1hello wolrd client1111111111.");
+	msg.data->length=strlen(msg.data->base)+1;
+	msg.msg_type=HMR_MSG_NORMAL;
+	hmr_rdma_send(rdma_trans, msg);
+
+	msg.data->base=strdup("2hello wolrd client1111111111.");
+	msg.data->length=strlen(msg.data->base)+1;
+	msg.msg_type=HMR_MSG_NORMAL;
+	hmr_rdma_send(rdma_trans, msg);
+
+	msg.data->base=strdup("2hello wolrd client1111111111.");
+	msg.data->length=strlen(msg.data->base)+1;
+	msg.msg_type=HMR_MSG_FINISH;
+	hmr_rdma_send(rdma_trans, msg);
 	pthread_join(ctx->epoll_pthread,NULL);
 
 	hmr_rdma_release();

@@ -19,7 +19,7 @@
 
 
 #define MIN_RECV_NUM 3
-#define INC_RECV_NUM 2
+#define INC_RECV_NUM 1
 
 extern struct list_head dev_list;
 

@@ -82,9 +82,9 @@ void *hmr_context_run(void *data)
 	while(1){
 		events_nr=epoll_wait(ctx->epfd,events,ARRAY_SIZE(events),5000);
 		if(events_nr>0){
-			INFO_LOG("events_nr %d",events_nr);
+			//INFO_LOG("events_nr %d",events_nr);
 			for(i=0;i<events_nr;i++){
-				INFO_LOG("process events[%d]",i);
+				//INFO_LOG("process events[%d]",i);
 				event_data=(struct hmr_event_data*)events[i].data.ptr;
 				event_data->event_handler(event_data->fd,event_data->data);
 			}
