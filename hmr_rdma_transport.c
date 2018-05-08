@@ -152,8 +152,8 @@ static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans)
 {
 	struct ibv_recv_wr recv_wr,*bad_wr=NULL;
 	struct hmr_task *recv_task;
-	int err=0;
 	struct ibv_sge sge;
+	int err=0;
 
 	recv_task=hmr_recv_task_create(rdma_trans);
 	if(!recv_task){
@@ -167,9 +167,9 @@ static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans)
 	recv_wr.sg_list=&sge;
 	recv_wr.num_sge=1;
 
-	sge.addr=(uintptr_t)recv_task->sge_list[0].addr;
-	sge.length=recv_task->sge_list[0].length;
-	sge.lkey=recv_task->sge_list[0].lkey;
+	sge.addr=(uintptr_t)recv_task->sge_list.addr;
+	sge.length=recv_task->sge_list.length;
+	sge.lkey=recv_task->sge_list.lkey;
 
 	err=ibv_post_recv(rdma_trans->qp, &recv_wr, &bad_wr);
 	if(err){
@@ -181,17 +181,12 @@ static void hmr_handle_close_connection(struct hmr_task *task, struct ibv_wc *wc
 {
 	struct hmr_rdma_transport *rdma_trans=task->rdma_trans; 
 	struct hmr_msg msg;
-	struct hmr_iovec iovec;
 	
 	if(wc->opcode==IBV_WC_RECV&&task->task_type==HMR_TASK_FINISH){
 		msg.msg_type=HMR_MSG_DONE;
-		msg.data=&iovec;
-		msg.nents=1;
-
-		iovec.base=strdup("the connection is closing.");
-		iovec.length=strlen(iovec.base)+1;
-		iovec.next=NULL;
-		hmr_rdma_send(rdma_trans, msg);
+		msg.data=strdup("the connection is closing.");
+		msg.data_size=strlen(msg.data)+1;
+		hmr_rdma_send(rdma_trans, &msg);
 	}
 	else if(wc->opcode==IBV_WC_SEND&&task->task_type==HMR_TASK_DONE){
 		INFO_LOG("call disconnect.");
@@ -206,17 +201,13 @@ static void hmr_handle_close_connection(struct hmr_task *task, struct ibv_wc *wc
 static void hmr_exchange_mr_info(struct hmr_rdma_transport *rdma_trans)
 {
 	struct hmr_msg msg;
-	struct hmr_iovec iovec;
 	
 	msg.msg_type=HMR_MSG_MR;
-	msg.nents=1;
-	msg.data=&iovec;
-
-	iovec.next=NULL;
-	iovec.base=rdma_trans->normal_mempool->recv_mr;
-	iovec.length=sizeof(struct ibv_mr);
+	msg.data=rdma_trans->normal_mempool->recv_mr;
+	msg.data_size=sizeof(struct ibv_mr);
+	
 	INFO_LOG("%s recv addr %p",__func__,rdma_trans->normal_mempool->recv_mr->addr);
-	hmr_rdma_send(rdma_trans, msg);		
+	hmr_rdma_send(rdma_trans, &msg);		
 }
 
 
@@ -234,11 +225,11 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 	switch (wc->opcode)
 	{
 	case IBV_WC_SEND:
-		INFO_LOG("IBV_WC_SEND send the content [%s] success.",task->sge_list[0].addr+sizeof(enum hmr_msg_type));
+		INFO_LOG("IBV_WC_SEND send the content [%s] success.",task->sge_list.addr+sizeof(enum hmr_msg_type));
 		break;
 	case IBV_WC_RECV:
-		task->task_type=*(enum hmr_task_type*)task->sge_list[0].addr;
-		INFO_LOG("IBV_WC_RECV recv the content [%s] success.",task->sge_list[0].addr+sizeof(enum hmr_msg_type));
+		task->task_type=*(enum hmr_task_type*)task->sge_list.addr;
+		INFO_LOG("IBV_WC_RECV recv the content [%s] success.",task->sge_list.addr+sizeof(enum hmr_msg_type));
 		rdma_trans->cur_recv_num--;
 		if(rdma_trans->cur_recv_num<MIN_RECV_NUM){
 			for(i=0;i<INC_RECV_NUM;i++){
@@ -246,7 +237,7 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 				rdma_trans->cur_recv_num++;
 			}
 		}
-		str=(char*)(task->sge_list[0].addr+sizeof(enum hmr_msg_type));
+		str=(char*)(task->sge_list.addr+sizeof(enum hmr_msg_type));
 		if(str[0]=='1'||str[0]=='2'){
 			INFO_LOG("haha. %p",rdma_trans->normal_mempool->recv_mr->addr);
 			INFO_LOG("content %s",rdma_trans->normal_mempool->recv_mr->addr+sizeof(enum hmr_msg_type));
@@ -267,7 +258,7 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 			rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_SCONNECTED;
 		
 		if(wc->opcode==IBV_WC_RECV){
-			memcpy(&rdma_trans->peer_info.normal_mr,task->sge_list[0].addr+sizeof(enum hmr_msg_type),sizeof(struct ibv_mr));
+			memcpy(&rdma_trans->peer_info.normal_mr,task->sge_list.addr+sizeof(enum hmr_msg_type),sizeof(struct ibv_mr));
 			INFO_LOG("normal mr %u %u",rdma_trans->peer_info.normal_mr.lkey,rdma_trans->peer_info.normal_mr.rkey);
 			
 			if(rdma_trans->trans_state==HMR_RDMA_TRANSPORT_STATE_CONNECTED)
@@ -876,29 +867,28 @@ static enum ibv_wr_opcode hmr_get_msg_opcode(struct hmr_msg *msg)
 	return retval;
 }
 
-int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg msg)
+int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg *msg)
 {
 	struct ibv_send_wr send_wr,*bad_wr=NULL;
-	struct ibv_sge sge[MAX_SEND_SGE];
+	struct ibv_sge sge;
 	struct hmr_task *send_task;
-	struct ibv_mr *mr;
-	int i,err=0;
+	int err=0;
 
-	err=hmr_msg_check(rdma_trans, &msg);
+	err=hmr_msg_check(rdma_trans, msg);
 	if(err){
 		ERROR_LOG("rdma transport exit error.");
 		return -1;
 	}
 
-	send_task=hmr_send_task_create(rdma_trans,&msg);
-	send_task->task_type=msg.msg_type;
+	send_task=hmr_send_task_create(rdma_trans,msg);
+	send_task->task_type=msg->msg_type;
 
 	memset(&send_wr,0,sizeof(send_wr));
 
 	send_wr.wr_id=(uintptr_t)send_task;
-	send_wr.num_sge=send_task->nents;
-	send_wr.opcode=hmr_get_msg_opcode(&msg);
-	send_wr.sg_list=&sge[0];
+	send_wr.num_sge=1;
+	send_wr.opcode=hmr_get_msg_opcode(msg);
+	send_wr.sg_list=&sge;
 	send_wr.send_flags=IBV_SEND_SIGNALED;
 
 	if(send_wr.opcode==IBV_WR_RDMA_READ||send_wr.opcode==IBV_WR_RDMA_WRITE){
@@ -907,11 +897,9 @@ int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg msg)
 		send_wr.wr.rdma.rkey=rdma_trans->peer_info.normal_mr.rkey;
 	}
 	
-	for(i=0;i<send_task->nents;i++){
-		sge[i].addr=(uintptr_t)send_task->sge_list[i].addr;
-		sge[i].length=send_task->sge_list[i].length;
-		sge[i].lkey=send_task->sge_list[i].lkey;
-	}
+	sge.addr=(uintptr_t)send_task->sge_list.addr;
+	sge.length=send_task->sge_list.length;
+	sge.lkey=send_task->sge_list.lkey;
 	
 	err=ibv_post_send(rdma_trans->qp, &send_wr, &bad_wr);
 	if(err){

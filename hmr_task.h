@@ -19,8 +19,7 @@ enum hmr_task_type{
 	
 struct hmr_task{
 	enum hmr_task_type task_type;
-	struct hmr_sge *sge_list;
-	int nents;
+	struct hmr_sge sge_list;
 	struct hmr_rdma_transport *rdma_trans;
 	struct list_head task_list_entry;
 };

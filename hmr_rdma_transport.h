@@ -105,6 +105,6 @@ int hmr_rdma_listen(struct hmr_rdma_transport *rdma_trans);
 	
 struct hmr_rdma_transport *hmr_rdma_accept(struct hmr_rdma_transport *rdma_trans);
 
-int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg msg);
+int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg *msg);
 
 #endif

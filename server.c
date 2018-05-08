@@ -12,19 +12,10 @@
 
 void build_msg(struct hmr_msg *msg)
 {
-	msg->nents=1;
-	msg->data=(struct hmr_iovec*)calloc(1,sizeof(struct hmr_iovec));
-	if(!msg->data){
-		ERROR_LOG("allocate memory error.");
-		return ;
-	}
 	msg->msg_type=HMR_MSG_NORMAL;
-	msg->data->base=strdup("hello wolrd server.");
-	msg->data->length=strlen(msg->data->base)+1;
-	msg->data->next=NULL;
+	msg->data=strdup("hello wolrd server.");
+	msg->data_size=strlen(msg->data)+1;
 }
-
-
 
 int main(int argc,char **argv)
 {
@@ -49,11 +40,7 @@ int main(int argc,char **argv)
 
 	while((accept_rdma_trans=hmr_rdma_accept(rdma_trans))!=NULL){
 		INFO_LOG("accept success.");
-		hmr_rdma_send(accept_rdma_trans, msg);
-		msg.msg_type=HMR_MSG_NORMAL;
-		msg.data->base=strdup("hello wolrd server copy.");
-		msg.data->length=strlen(msg.data->base)+1;
-		hmr_rdma_send(accept_rdma_trans, msg);
+		hmr_rdma_send(accept_rdma_trans, &msg);
 	}
 	pthread_join(ctx->epoll_pthread,NULL);
 

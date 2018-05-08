@@ -37,16 +37,10 @@ enum hmr_msg_type{
 	HMR_MSG_DONE
 };
 
-struct hmr_iovec{
-	void *base;
-	int length;
-	struct hmr_iovec *next;
-};
-
 struct hmr_msg{
 	enum hmr_msg_type msg_type;
-	struct hmr_iovec *data;
-	int nents;
+	int  data_size;
+	void *data;
 };
 
 #endif
