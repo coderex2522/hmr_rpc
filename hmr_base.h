@@ -29,10 +29,12 @@ enum hmr_log_level{
 };
 	
 enum hmr_msg_type{
+	HMR_MSG_MR,
 	HMR_MSG_NORMAL,
 	HMR_MSG_READ,
 	HMR_MSG_WRITE,
-	HMR_MSG_FINISH
+	HMR_MSG_FINISH,
+	HMR_MSG_DONE
 };
 
 struct hmr_iovec{

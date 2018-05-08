@@ -23,11 +23,11 @@ struct hmr_task *hmr_send_task_create(struct hmr_rdma_transport *rdma_trans, str
 
 	data_head=msg->data;
 	for(i=0;data_head!=NULL&&i<msg->nents;i++){
-		task->sge_list[i].length=sizeof(enum hmr_msg_type)+data_head->length+1;
+		task->sge_list[i].length=sizeof(enum hmr_msg_type)+data_head->length;
 		task->sge_list[i].addr=hmr_mempool_alloc_addr(rdma_trans->normal_mempool, task->sge_list[i].length, 1);
 		task->sge_list[i].lkey=rdma_trans->normal_mempool->send_mr->lkey;
 		memcpy(task->sge_list[i].addr,&msg->msg_type,sizeof(enum hmr_msg_type));
-		memcpy(task->sge_list[i].addr+sizeof(enum hmr_msg_type),data_head->base,data_head->length+1);
+		memcpy(task->sge_list[i].addr+sizeof(enum hmr_msg_type),data_head->base,data_head->length);
 		data_head=data_head->next;
 		task->nents++;
 	}

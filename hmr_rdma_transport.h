@@ -28,6 +28,11 @@ enum hmr_rdma_transport_state {
 	HMR_RDMA_TRANSPORT_STATE_LISTEN,
 	HMR_RDMA_TRANSPORT_STATE_CONNECTING,
 	HMR_RDMA_TRANSPORT_STATE_CONNECTED,
+	/* when the two sides exchange the info of one sided RDMA,
+	 * the trans state will from CONNECTED to S-R-DCONNECTED
+	 */
+	HMR_RDMA_TRANSPORT_STATE_SCONNECTED,
+	HMR_RDMA_TRANSPORT_STATE_RCONNECTED,
 	HMR_RDMA_TRANSPORT_STATE_DISCONNECTED,
 	HMR_RDMA_TRANSPORT_STATE_RECONNECT,
 	HMR_RDMA_TRANSPORT_STATE_CLOSED,
@@ -50,6 +55,14 @@ struct hmr_cq{
 	struct hmr_context *ctx;
 };
 
+struct hmr_peer_info{
+	struct ibv_mr normal_mr;
+#ifdef HMR_NVM_ENABLE
+	struct ibv_mr nvm_buffer_mr;
+	struct ibv_mr nvm_mr;
+#endif
+};
+
 struct hmr_rdma_transport{
 	struct sockaddr_in	peer_addr;
 	struct sockaddr_in local_addr;
@@ -65,11 +78,14 @@ struct hmr_rdma_transport{
 	
 	int is_client;
 	
+	struct hmr_peer_info peer_info;
+	
 	struct hmr_mempool *normal_mempool;
 #ifdef HMR_NVM_ENABLE
 	struct hmr_mempool *nvm_mempool;
 	struct hmr_mempool *nvm_buffer;
 #endif
+
 	/*pre commit post recv num*/
 	int cur_recv_num;
 	

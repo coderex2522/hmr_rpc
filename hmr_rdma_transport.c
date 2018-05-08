@@ -184,12 +184,13 @@ static void hmr_handle_close_connection(struct hmr_task *task, struct ibv_wc *wc
 	struct hmr_iovec iovec;
 	
 	if(wc->opcode==IBV_WC_RECV&&task->task_type==HMR_TASK_FINISH){
-		msg.msg_type=HMR_MSG_FINISH+1;
+		msg.msg_type=HMR_MSG_DONE;
 		msg.data=&iovec;
-		iovec.base=strdup("the connection is closing.");
-		iovec.length=strlen(iovec.base);
-		iovec.next=NULL;
 		msg.nents=1;
+
+		iovec.base=strdup("the connection is closing.");
+		iovec.length=strlen(iovec.base)+1;
+		iovec.next=NULL;
 		hmr_rdma_send(rdma_trans, msg);
 	}
 	else if(wc->opcode==IBV_WC_SEND&&task->task_type==HMR_TASK_DONE){
@@ -200,10 +201,30 @@ static void hmr_handle_close_connection(struct hmr_task *task, struct ibv_wc *wc
 	}
 }
 
+static void hmr_exchange_mr_info(struct hmr_rdma_transport *rdma_trans)
+{
+	struct hmr_msg msg;
+	struct hmr_iovec iovec;
+	
+	msg.msg_type=HMR_MSG_MR;
+	msg.nents=1;
+	msg.data=&iovec;
+
+	iovec.next=NULL;
+	iovec.base=rdma_trans->normal_mempool->recv_mr;
+	iovec.length=sizeof(struct ibv_mr);
+	//iovec.base=strdup("hello nihao ma?");
+	//iovec.length=strlen(iovec.base)+1;
+	INFO_LOG("%s",__func__);
+	hmr_rdma_send(rdma_trans, msg);		
+}
+
+
 static void hmr_wc_success_handler(struct ibv_wc *wc)
 {
 	struct hmr_task *task;
 	struct hmr_rdma_transport *rdma_trans;
+	struct ibv_mr *mr;
 	int i;
 	
 	task=(struct hmr_task*)(uintptr_t)wc->wr_id;
@@ -235,6 +256,21 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 	}
 	if(task->task_type>=HMR_TASK_FINISH)
 		hmr_handle_close_connection(task, wc);
+	if(task->task_type==HMR_TASK_MR){
+		INFO_LOG("WC HMR_TASK MR START");
+		if(wc->opcode==IBV_WC_SEND&&rdma_trans->trans_state==HMR_RDMA_TRANSPORT_STATE_CONNECTED)
+			rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_SCONNECTED;
+		
+		if(wc->opcode==IBV_WC_RECV){
+			memcpy(&rdma_trans->peer_info.normal_mr,task->sge_list[0].addr+sizeof(enum hmr_msg_type),sizeof(struct ibv_mr));
+			INFO_LOG("normal mr %u %u",rdma_trans->peer_info.normal_mr.lkey,rdma_trans->peer_info.normal_mr.rkey);
+			
+			if(rdma_trans->trans_state==HMR_RDMA_TRANSPORT_STATE_CONNECTED)
+				hmr_exchange_mr_info(rdma_trans);
+			rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_RCONNECTED;
+		}
+		INFO_LOG("WC HMR_TASK MR END.");
+	}
 }
 
 static void hmr_wc_error_handler(struct ibv_wc *wc)
@@ -518,6 +554,8 @@ static int on_cm_established(struct rdma_cm_event *event, struct hmr_rdma_transp
 
 	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_CONNECTED;
 
+	if(rdma_trans->is_client)
+		hmr_exchange_mr_info(rdma_trans);
 	return retval;
 }
 
@@ -799,16 +837,19 @@ int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg msg)
 	struct ibv_send_wr send_wr,*bad_wr=NULL;
 	struct ibv_sge sge[MAX_SEND_SGE];
 	struct hmr_task *send_task;
+	struct ibv_mr *mr;
 	int i,err=0;
 
-	while(rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_CONNECTED){
-		if(rdma_trans->trans_state>HMR_RDMA_TRANSPORT_STATE_CONNECTED)
+	while(rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_CONNECTED&&
+		rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_SCONNECTED&&
+		rdma_trans->trans_state!=HMR_RDMA_TRANSPORT_STATE_RCONNECTED){
+		if(rdma_trans->trans_state>HMR_RDMA_TRANSPORT_STATE_RCONNECTED)
 			return -1;
 	}
-	
+
 	send_task=hmr_send_task_create(rdma_trans,&msg);
 	send_task->task_type=msg.msg_type;
-		
+
 	memset(&send_wr,0,sizeof(send_wr));
 
 	send_wr.wr_id=(uintptr_t)send_task;

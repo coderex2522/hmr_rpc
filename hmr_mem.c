@@ -41,6 +41,7 @@ struct hmr_mempool *hmr_mempool_create(struct hmr_rdma_transport *rdma_trans, in
 		goto cleansendmr;
 	}
 
+	INFO_LOG("mempool %u %u",mempool->recv_mr->lkey,mempool->recv_mr->rkey);
 	return mempool;
 	
 cleansendmr:

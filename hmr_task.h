@@ -8,6 +8,8 @@ struct hmr_sge{
 };
 
 enum hmr_task_type{
+	/*HMR_TASK_MR only use for exchange the two side remote_mr info*/
+	HMR_TASK_MR,
 	HMR_TASK_NORMAL,
 	HMR_TASK_READ,
 	HMR_TASK_WRITE,

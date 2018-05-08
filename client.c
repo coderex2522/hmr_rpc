@@ -18,8 +18,9 @@ void build_msg(struct hmr_msg *msg)
 		ERROR_LOG("allocate memory error.");
 		return ;
 	}
+	msg->msg_type=HMR_MSG_NORMAL;
 	msg->data->base=strdup("hello wolrd client.");
-	msg->data->length=strlen(msg->data->base);
+	msg->data->length=strlen(msg->data->base)+1;
 	msg->data->next=NULL;
 }
 
@@ -45,11 +46,12 @@ int main(int argc,char **argv)
 		return -1;
 	}
 	hmr_rdma_send(rdma_trans, msg);
-	
+
 	msg.data->base=strdup("hello wolrd client copy.");
-	msg.data->length=strlen(msg.data->base);
-	msg.msg_type=HMR_MSG_FINISH;
+	msg.data->length=strlen(msg.data->base)+1;
+	msg.msg_type=HMR_MSG_NORMAL;
 	hmr_rdma_send(rdma_trans, msg);
+
 	pthread_join(ctx->epoll_pthread,NULL);
 
 	hmr_rdma_release();
