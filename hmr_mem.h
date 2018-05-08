@@ -12,6 +12,8 @@ struct hmr_mempool{
 	
 	struct ibv_mr *send_mr;
 	struct ibv_mr *recv_mr;
+	//int start_recv_region;
+	//int end_recv_region;
 };
 
 struct hmr_mempool *hmr_mempool_create(struct hmr_rdma_transport *rdma_trans, int is_nvm);

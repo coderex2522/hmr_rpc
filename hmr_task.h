@@ -25,6 +25,6 @@ struct hmr_task{
 };
 
 struct hmr_task *hmr_send_task_create(struct hmr_rdma_transport *rdma_trans, struct hmr_msg *msg);
-struct hmr_task *hmr_recv_task_create(struct hmr_rdma_transport *rdma_trans);
+struct hmr_task *hmr_recv_task_create(struct hmr_rdma_transport *rdma_trans, int size);
 
 #endif

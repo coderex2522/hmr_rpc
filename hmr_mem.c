@@ -14,13 +14,13 @@ struct hmr_mempool *hmr_mempool_create(struct hmr_rdma_transport *rdma_trans, in
 		ERROR_LOG("allocate memory error.");
 		return NULL;
 	}
-	mempool->sr_used_size=0;
-	mempool->send_region=malloc(ALLOC_MEM_SIZE);
+	
+	mempool->send_region=malloc(ALLOC_MEM_SIZE*2);
 	if(!mempool->send_region){
 		 ERROR_LOG("allocate memory error.");
 		 goto cleanmempool;
 	}
-	mempool->recv_region=malloc(ALLOC_MEM_SIZE);
+	mempool->recv_region=mempool->send_region+ALLOC_MEM_SIZE;
 	
 	mempool->send_mr=ibv_reg_mr(rdma_trans->device->pd, mempool->send_region, 
 							ALLOC_MEM_SIZE,
@@ -67,7 +67,7 @@ void hmr_mempool_release(struct hmr_mempool *mempool)
 	ibv_dereg_mr(mempool->recv_mr);
 
 	free(mempool->send_region);
-	free(mempool->recv_region);
+	//free(mempool->recv_region);
 }
 
 

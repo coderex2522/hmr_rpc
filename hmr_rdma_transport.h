@@ -13,7 +13,7 @@
 
 #define MAX_SEND_SGE 4
 
-#define MAX_RECV_SIZE 100
+#define MAX_RECV_SIZE 128
 /*set the memory max size*/
 #define MAX_MEM_SIZE 1024
 
@@ -88,9 +88,11 @@ struct hmr_rdma_transport{
 
 	/*pre commit post recv num*/
 	int cur_recv_num;
+	int default_recv_size;
 	
 	struct list_head send_task_list;
 	struct hmr_rdma_transport *accept_rdma_trans;
+	void (*process_resp)(struct hmr_msg *msg);
 };
 
 void hmr_rdma_init();

@@ -17,6 +17,10 @@ void build_msg(struct hmr_msg *msg)
 	msg->data_size=strlen(msg->data)+1;
 }
 
+void process_response(struct hmr_msg *msg)
+{
+	INFO_LOG("recv content %s",msg->data);
+}
 
 int main(int argc,char **argv)
 {
@@ -31,6 +35,7 @@ int main(int argc,char **argv)
 
 	ctx=hmr_context_create();
 	rdma_trans=hmr_rdma_create(ctx);
+	rdma_trans->process_resp=process_response;
 	hmr_rdma_connect(rdma_trans,argv[1],argv[2]);
 	
 	err=pthread_create(&ctx->epoll_pthread,NULL,hmr_context_run,ctx);
@@ -39,6 +44,12 @@ int main(int argc,char **argv)
 		return -1;
 	}
 	hmr_rdma_send(rdma_trans, &msg);
+	
+	msg.msg_type=HMR_MSG_WRITE;
+	msg.data=strdup("huststephen hello world process.");
+	msg.data_size=strlen(msg.data)+1;
+	hmr_rdma_send(rdma_trans, &msg);
+	
 	msg.msg_type=HMR_MSG_FINISH;
 	msg.data=strdup("hello world second.");
 	msg.data_size=strlen(msg.data)+1;

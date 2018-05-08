@@ -148,14 +148,14 @@ const char *ibv_wc_opcode_str(enum ibv_wc_opcode opcode)
 	};
 }
 
-static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans)
+static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans, int size)
 {
 	struct ibv_recv_wr recv_wr,*bad_wr=NULL;
 	struct hmr_task *recv_task;
 	struct ibv_sge sge;
 	int err=0;
 
-	recv_task=hmr_recv_task_create(rdma_trans);
+	recv_task=hmr_recv_task_create(rdma_trans, size);
 	if(!recv_task){
 		ERROR_LOG("post recv error.");
 		return ;
@@ -232,16 +232,19 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 		break;
 	case IBV_WC_RECV:
 		task->task_type=*(enum hmr_task_type*)task->sge_list.addr;
-		INFO_LOG("recv content: [%s] length: [%d] success.",msg.data,msg.data_size);
 		rdma_trans->cur_recv_num--;
 		if(rdma_trans->cur_recv_num<MIN_RECV_NUM){
 			for(i=0;i<INC_RECV_NUM;i++){
-				hmr_post_recv(rdma_trans);
+				hmr_post_recv(rdma_trans, rdma_trans->default_recv_size);
 				rdma_trans->cur_recv_num++;
 			}
 		}
+		if(rdma_trans->process_resp!=NULL&&task->task_type!=HMR_TASK_MR){
+			rdma_trans->process_resp(&msg);
+		}
 		break;
 	case IBV_WC_RDMA_WRITE:
+		INFO_LOG("ibv wc rdma write.");
 		break;
 	case IBV_WC_RDMA_READ:
 		break;
@@ -256,8 +259,8 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 			rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_SCONNECTED;
 		
 		if(wc->opcode==IBV_WC_RECV){
-			memcpy(&rdma_trans->peer_info.normal_mr,task->sge_list.addr+sizeof(enum hmr_msg_type)+sizeof(int),sizeof(struct ibv_mr));
-			INFO_LOG("normal mr %u %u",rdma_trans->peer_info.normal_mr.lkey,rdma_trans->peer_info.normal_mr.rkey);
+			memcpy(&rdma_trans->peer_info.normal_mr, msg.data, sizeof(struct ibv_mr));
+			INFO_LOG("normal mr %u %u",rdma_trans->peer_info.normal_mr.lkey, rdma_trans->peer_info.normal_mr.rkey);
 			
 			if(rdma_trans->trans_state==HMR_RDMA_TRANSPORT_STATE_CONNECTED)
 				hmr_exchange_mr_info(rdma_trans);
@@ -488,7 +491,7 @@ static int on_cm_route_resolved(struct rdma_cm_event *event, struct hmr_rdma_tra
 	}
 
 	for(i=0;i<MIN_RECV_NUM*2;i++){
-		hmr_post_recv(rdma_trans);
+		hmr_post_recv(rdma_trans,rdma_trans->default_recv_size);
 		rdma_trans->cur_recv_num++;
 	}
 	return retval;
@@ -675,6 +678,7 @@ struct hmr_rdma_transport *hmr_rdma_create(struct hmr_context *ctx)
 		ERROR_LOG("allocate hmr_rdma_transport memory error.");
 		return NULL;
 	}
+	rdma_trans->default_recv_size=MAX_RECV_SIZE;
 	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_INIT;
 	rdma_trans->ctx=ctx;
 	hmr_rdma_event_channel_init(rdma_trans);
@@ -819,7 +823,7 @@ struct hmr_rdma_transport *hmr_rdma_accept(struct hmr_rdma_transport *rdma_trans
 
 	/*pre commit some post recv*/
 	for(i=0;i<MIN_RECV_NUM*2;i++){
-		hmr_post_recv(accept_rdma_trans);
+		hmr_post_recv(accept_rdma_trans, accept_rdma_trans->default_recv_size);
 		accept_rdma_trans->cur_recv_num++;
 	}
 	return accept_rdma_trans;

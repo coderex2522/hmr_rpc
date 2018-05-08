@@ -17,6 +17,11 @@ void build_msg(struct hmr_msg *msg)
 	msg->data_size=strlen(msg->data)+1;
 }
 
+void process_response(struct hmr_msg * msg)
+{
+	INFO_LOG("recv content %s",msg->data);
+}
+
 int main(int argc,char **argv)
 {
 	struct hmr_context *ctx;

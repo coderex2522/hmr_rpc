@@ -26,7 +26,7 @@ struct hmr_task *hmr_send_task_create(struct hmr_rdma_transport *rdma_trans, str
 	return task;
 }
 
-struct hmr_task *hmr_recv_task_create(struct hmr_rdma_transport *rdma_trans)
+struct hmr_task *hmr_recv_task_create(struct hmr_rdma_transport *rdma_trans, int size)
 {
 	struct hmr_task *task;
 	
@@ -37,8 +37,8 @@ struct hmr_task *hmr_recv_task_create(struct hmr_rdma_transport *rdma_trans)
 	}
 
 	task->rdma_trans=rdma_trans;
-	task->sge_list.length=MAX_RECV_SIZE;
-	task->sge_list.addr=hmr_mempool_alloc_addr(rdma_trans->normal_mempool, MAX_RECV_SIZE, 0);
+	task->sge_list.length=size;
+	task->sge_list.addr=hmr_mempool_alloc_addr(rdma_trans->normal_mempool, size, 0);
 	task->sge_list.lkey=rdma_trans->normal_mempool->recv_mr->lkey;
 	
 	INIT_LIST_HEAD(&task->task_list_entry);
