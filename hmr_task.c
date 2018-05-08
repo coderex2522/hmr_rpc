@@ -14,12 +14,13 @@ struct hmr_task *hmr_send_task_create(struct hmr_rdma_transport *rdma_trans, str
 		return NULL;
 	}
 	task->rdma_trans=rdma_trans;
-	task->sge_list.length=sizeof(enum hmr_msg_type)+msg->data_size;
+	task->sge_list.length=sizeof(enum hmr_msg_type)+sizeof(int)+msg->data_size;
 	task->sge_list.addr=hmr_mempool_alloc_addr(rdma_trans->normal_mempool, task->sge_list.length, 1);
 	task->sge_list.lkey=rdma_trans->normal_mempool->send_mr->lkey;
 	
-	memcpy(task->sge_list.addr,&msg->msg_type,sizeof(enum hmr_msg_type));
-	memcpy(task->sge_list.addr+sizeof(enum hmr_msg_type),msg->data,msg->data_size);
+	memcpy(task->sge_list.addr, &msg->msg_type, sizeof(enum hmr_msg_type));
+	memcpy(task->sge_list.addr+sizeof(enum hmr_msg_type), &msg->data_size, sizeof(int));
+	memcpy(task->sge_list.addr+sizeof(enum hmr_msg_type)+sizeof(int), msg->data, msg->data_size);
 	
 	INIT_LIST_HEAD(&task->task_list_entry);
 	return task;

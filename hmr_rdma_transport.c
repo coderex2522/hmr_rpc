@@ -213,34 +213,32 @@ static void hmr_exchange_mr_info(struct hmr_rdma_transport *rdma_trans)
 
 static void hmr_wc_success_handler(struct ibv_wc *wc)
 {
-	struct hmr_task *task;
 	struct hmr_rdma_transport *rdma_trans;
-	struct ibv_mr *mr;
-	char *str;
+	struct hmr_task *task;
+	struct hmr_msg msg;
 	int i;
 	
 	task=(struct hmr_task*)(uintptr_t)wc->wr_id;
 	rdma_trans=task->rdma_trans;
+	msg.msg_type=*(enum hmr_msg_type*)task->sge_list.addr;
+	msg.data_size=*(int *)(task->sge_list.addr+sizeof(enum hmr_msg_type));
+	msg.data=task->sge_list.addr+sizeof(enum hmr_msg_type)+sizeof(int);
+	
 	
 	switch (wc->opcode)
 	{
 	case IBV_WC_SEND:
-		INFO_LOG("IBV_WC_SEND send the content [%s] success.",task->sge_list.addr+sizeof(enum hmr_msg_type));
+		INFO_LOG("send content: [%s] length: [%d] success.",msg.data,msg.data_size);
 		break;
 	case IBV_WC_RECV:
 		task->task_type=*(enum hmr_task_type*)task->sge_list.addr;
-		INFO_LOG("IBV_WC_RECV recv the content [%s] success.",task->sge_list.addr+sizeof(enum hmr_msg_type));
+		INFO_LOG("recv content: [%s] length: [%d] success.",msg.data,msg.data_size);
 		rdma_trans->cur_recv_num--;
 		if(rdma_trans->cur_recv_num<MIN_RECV_NUM){
 			for(i=0;i<INC_RECV_NUM;i++){
 				hmr_post_recv(rdma_trans);
 				rdma_trans->cur_recv_num++;
 			}
-		}
-		str=(char*)(task->sge_list.addr+sizeof(enum hmr_msg_type));
-		if(str[0]=='1'||str[0]=='2'){
-			INFO_LOG("haha. %p",rdma_trans->normal_mempool->recv_mr->addr);
-			INFO_LOG("content %s",rdma_trans->normal_mempool->recv_mr->addr+sizeof(enum hmr_msg_type));
 		}
 		break;
 	case IBV_WC_RDMA_WRITE:
@@ -258,7 +256,7 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 			rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_SCONNECTED;
 		
 		if(wc->opcode==IBV_WC_RECV){
-			memcpy(&rdma_trans->peer_info.normal_mr,task->sge_list.addr+sizeof(enum hmr_msg_type),sizeof(struct ibv_mr));
+			memcpy(&rdma_trans->peer_info.normal_mr,task->sge_list.addr+sizeof(enum hmr_msg_type)+sizeof(int),sizeof(struct ibv_mr));
 			INFO_LOG("normal mr %u %u",rdma_trans->peer_info.normal_mr.lkey,rdma_trans->peer_info.normal_mr.rkey);
 			
 			if(rdma_trans->trans_state==HMR_RDMA_TRANSPORT_STATE_CONNECTED)
