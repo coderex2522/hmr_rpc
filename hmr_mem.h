@@ -6,14 +6,16 @@
 struct hmr_mempool{
 	void *send_region;
 	void *recv_region;
-	
-	int sr_used_size;
-	int rr_used_size;
+	void *rdma_region;
 	
 	struct ibv_mr *send_mr;
 	struct ibv_mr *recv_mr;
-	//int start_recv_region;
-	//int end_recv_region;
+	struct ibv_mr *rdma_mr;
+
+	/*used for buffer control*/
+	int used_send_region;
+	int used_recv_region;
+	int used_rdma_region;
 };
 
 struct hmr_mempool *hmr_mempool_create(struct hmr_rdma_transport *rdma_trans, int is_nvm);

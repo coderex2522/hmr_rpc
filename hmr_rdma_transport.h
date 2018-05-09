@@ -17,10 +17,6 @@
 /*set the memory max size*/
 #define MAX_MEM_SIZE 1024
 
-
-#define MIN_RECV_NUM 3
-#define INC_RECV_NUM 1
-
 extern struct list_head dev_list;
 
 enum hmr_rdma_transport_state {

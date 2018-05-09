@@ -177,6 +177,16 @@ static void hmr_post_recv(struct hmr_rdma_transport *rdma_trans, int size)
 	}
 }
 
+static void hmr_pre_post_recv(struct hmr_rdma_transport *rdma_trans)
+{
+	int i,num;
+	num=ALLOC_MEM_SIZE/rdma_trans->default_recv_size;
+	num-=2;
+	for(i=0;i<num;i++){
+		hmr_post_recv(rdma_trans, rdma_trans->default_recv_size);
+	}
+}
+
 static void hmr_handle_close_connection(struct hmr_task *task, struct ibv_wc *wc)
 {
 	struct hmr_rdma_transport *rdma_trans=task->rdma_trans; 
@@ -203,11 +213,10 @@ static void hmr_exchange_mr_info(struct hmr_rdma_transport *rdma_trans)
 	struct hmr_msg msg;
 	
 	msg.msg_type=HMR_MSG_MR;
-	msg.data=rdma_trans->normal_mempool->recv_mr;
+	msg.data=rdma_trans->normal_mempool->rdma_mr;
 	msg.data_size=sizeof(struct ibv_mr);
 	
-	INFO_LOG("%s recv addr %p",__func__,rdma_trans->normal_mempool->recv_mr->addr);
-	hmr_rdma_send(rdma_trans, &msg);		
+	hmr_rdma_send(rdma_trans, &msg);
 }
 
 
@@ -232,16 +241,11 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 		break;
 	case IBV_WC_RECV:
 		task->task_type=*(enum hmr_task_type*)task->sge_list.addr;
-		rdma_trans->cur_recv_num--;
-		if(rdma_trans->cur_recv_num<MIN_RECV_NUM){
-			for(i=0;i<INC_RECV_NUM;i++){
-				hmr_post_recv(rdma_trans, rdma_trans->default_recv_size);
-				rdma_trans->cur_recv_num++;
-			}
-		}
+		INFO_LOG("recv content: [%s] length: [%d] success.",msg.data,msg.data_size);
 		if(rdma_trans->process_resp!=NULL&&task->task_type!=HMR_TASK_MR){
 			rdma_trans->process_resp(&msg);
 		}
+		
 		break;
 	case IBV_WC_RDMA_WRITE:
 		INFO_LOG("ibv wc rdma write.");
@@ -267,6 +271,9 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 			rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_RCONNECTED;
 		}
 	}
+
+	if(wc->opcode==IBV_WC_RECV)
+		hmr_post_recv(rdma_trans, rdma_trans->default_recv_size);
 }
 
 static void hmr_wc_error_handler(struct ibv_wc *wc)
@@ -490,10 +497,7 @@ static int on_cm_route_resolved(struct rdma_cm_event *event, struct hmr_rdma_tra
 		goto cleanqp;
 	}
 
-	for(i=0;i<MIN_RECV_NUM*2;i++){
-		hmr_post_recv(rdma_trans,rdma_trans->default_recv_size);
-		rdma_trans->cur_recv_num++;
-	}
+	hmr_pre_post_recv(rdma_trans);
 	return retval;
 	
 cleanqp:
@@ -822,10 +826,7 @@ struct hmr_rdma_transport *hmr_rdma_accept(struct hmr_rdma_transport *rdma_trans
 #endif
 
 	/*pre commit some post recv*/
-	for(i=0;i<MIN_RECV_NUM*2;i++){
-		hmr_post_recv(accept_rdma_trans, accept_rdma_trans->default_recv_size);
-		accept_rdma_trans->cur_recv_num++;
-	}
+	hmr_pre_post_recv(accept_rdma_trans);
 	return accept_rdma_trans;
 }
 

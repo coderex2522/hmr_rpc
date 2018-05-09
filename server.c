@@ -44,6 +44,7 @@ int main(int argc,char **argv)
 	}
 
 	while((accept_rdma_trans=hmr_rdma_accept(rdma_trans))!=NULL){
+		accept_rdma_trans->process_resp=process_response;
 		INFO_LOG("accept success.");
 		hmr_rdma_send(accept_rdma_trans, &msg);
 	}
