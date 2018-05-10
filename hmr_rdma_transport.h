@@ -17,6 +17,10 @@
 /*set the memory max size*/
 #define MAX_MEM_SIZE 1024
 
+
+/*MSG_BOUNDARY_SIZE is the boundary of large msg and small msg*/
+#define MSG_BOUNDARY_SIZE 64
+
 extern struct list_head dev_list;
 
 enum hmr_rdma_transport_state {
@@ -52,6 +56,7 @@ struct hmr_cq{
 };
 
 struct hmr_peer_info{
+	int used_normal_size;
 	struct ibv_mr normal_mr;
 #ifdef HMR_NVM_ENABLE
 	struct ibv_mr nvm_buffer_mr;
@@ -80,10 +85,13 @@ struct hmr_rdma_transport{
 #ifdef HMR_NVM_ENABLE
 	struct hmr_mempool *nvm_mempool;
 	struct hmr_mempool *nvm_buffer;
+	/*snb:sync nvm buffer, for sync the dram buffer and nvm mempool*/
+	int snb_timerfd;
 #endif
 
+	/*send task timerfd*/
+	int st_timerfd;
 	/*pre commit post recv num*/
-	int cur_recv_num;
 	int default_recv_size;
 	
 	struct list_head send_task_list;

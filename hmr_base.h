@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/epoll.h>
+#include <sys/timerfd.h>
 #include <linux/list.h>
 #include <infiniband/verbs.h>
 #include <rdma/rdma_cma.h>

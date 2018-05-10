@@ -6,7 +6,6 @@
 struct hmr_mempool *hmr_mempool_create(struct hmr_rdma_transport *rdma_trans, int is_nvm)
 {
 	struct hmr_mempool *mempool;
-	int err=0;
 	
 	mempool=(struct hmr_mempool*)calloc(1,sizeof(struct hmr_mempool));
 	if(!mempool){

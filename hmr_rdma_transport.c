@@ -11,6 +11,8 @@
 #include "hmr_rdma_transport.h"
 #include "hmr_mem.h"
 #include "hmr_task.h"
+#include "hmr_utils.h"
+#include "hmr_timerfd.h"
 
 static int rdma_num_devices=0;
 
@@ -215,7 +217,8 @@ static void hmr_exchange_mr_info(struct hmr_rdma_transport *rdma_trans)
 	msg.msg_type=HMR_MSG_MR;
 	msg.data=rdma_trans->normal_mempool->rdma_mr;
 	msg.data_size=sizeof(struct ibv_mr);
-	
+
+	INFO_LOG("%s",__func__);
 	hmr_rdma_send(rdma_trans, &msg);
 }
 
@@ -225,7 +228,6 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 	struct hmr_rdma_transport *rdma_trans;
 	struct hmr_task *task;
 	struct hmr_msg msg;
-	int i;
 	
 	task=(struct hmr_task*)(uintptr_t)wc->wr_id;
 	rdma_trans=task->rdma_trans;
@@ -238,6 +240,7 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 	{
 	case IBV_WC_SEND:
 		INFO_LOG("send content: [%s] length: [%d] success.",msg.data,msg.data_size);
+		INFO_LOG("send success task %p",task);
 		break;
 	case IBV_WC_RECV:
 		task->task_type=*(enum hmr_task_type*)task->sge_list.addr;
@@ -264,8 +267,8 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 		
 		if(wc->opcode==IBV_WC_RECV){
 			memcpy(&rdma_trans->peer_info.normal_mr, msg.data, sizeof(struct ibv_mr));
-			INFO_LOG("normal mr %u %u",rdma_trans->peer_info.normal_mr.lkey, rdma_trans->peer_info.normal_mr.rkey);
-			
+			INFO_LOG("normal mr %u %u %d",rdma_trans->peer_info.normal_mr.lkey, rdma_trans->peer_info.normal_mr.rkey,rdma_trans->peer_info.normal_mr.length);
+			rdma_trans->peer_info.used_normal_size=0;
 			if(rdma_trans->trans_state==HMR_RDMA_TRANSPORT_STATE_CONNECTED)
 				hmr_exchange_mr_info(rdma_trans);
 			rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_RCONNECTED;
@@ -274,6 +277,8 @@ static void hmr_wc_success_handler(struct ibv_wc *wc)
 
 	if(wc->opcode==IBV_WC_RECV)
 		hmr_post_recv(rdma_trans, rdma_trans->default_recv_size);
+	if(wc->opcode==IBV_WC_SEND||wc->opcode==IBV_WC_RDMA_WRITE)
+		free(task);
 }
 
 static void hmr_wc_error_handler(struct ibv_wc *wc)
@@ -472,7 +477,7 @@ static int on_cm_addr_resolved(struct rdma_cm_event *event, struct hmr_rdma_tran
 static int on_cm_route_resolved(struct rdma_cm_event *event, struct hmr_rdma_transport *rdma_trans)
 {
 	struct rdma_conn_param conn_param;
-	int i,retval=0;
+	int retval=0;
 	
 	retval=hmr_qp_create(rdma_trans);
 	if(retval){
@@ -509,7 +514,6 @@ cleanqp:
 
 static int on_cm_connect_request(struct rdma_cm_event *event, struct hmr_rdma_transport *rdma_trans)
 {
-	struct rdma_conn_param conn_param;
 	struct hmr_rdma_transport *accept_rdma_trans;
 	int retval=0;
 
@@ -556,6 +560,10 @@ static int on_cm_established(struct rdma_cm_event *event, struct hmr_rdma_transp
 
 	if(rdma_trans->is_client)
 		hmr_exchange_mr_info(rdma_trans);
+	
+	hmr_context_add_event_fd(rdma_trans->ctx, rdma_trans->st_timerfd,
+						EPOLLIN,hmr_send_task_handler, 
+						rdma_trans);
 	return retval;
 }
 
@@ -563,6 +571,10 @@ static int on_cm_disconnected(struct rdma_cm_event *event, struct hmr_rdma_trans
 {
 	int retval=0;
 
+	if(!rdma_trans->is_client){
+		INFO_LOG("Will print rdma write content.");
+		INFO_LOG("content:[%s]",rdma_trans->normal_mempool->rdma_region+sizeof(enum hmr_msg_type)+sizeof(int));
+	}
 	rdma_destroy_qp(rdma_trans->cm_id);
 
 	hmr_mempool_release(rdma_trans->normal_mempool);
@@ -574,6 +586,10 @@ static int on_cm_disconnected(struct rdma_cm_event *event, struct hmr_rdma_trans
 
 	hmr_context_del_event_fd(rdma_trans->ctx, rdma_trans->hcq->comp_channel->fd);
 	hmr_context_del_event_fd(rdma_trans->ctx, rdma_trans->event_channel->fd);
+	hmr_context_del_event_fd(rdma_trans->ctx, rdma_trans->st_timerfd);
+#ifdef HMR_NVM_ENABLE
+	hmr_context_del_event_fd(rdma_trans->ctx, rdma_trans->snb_timerfd);
+#endif
 
 	if(rdma_trans->is_client)
 		rdma_trans->ctx->is_stop=1;
@@ -622,7 +638,6 @@ static void hmr_rdma_event_channel_handler(int fd,void *data)
 {
 	struct rdma_event_channel *ec=(struct rdma_event_channel*)data;
 	struct rdma_cm_event *event,event_copy;
-	struct hmr_rdma_transport *rdma_trans;
 	int retval=0;
 
 	event=NULL;
@@ -676,7 +691,10 @@ cleanec:
 struct hmr_rdma_transport *hmr_rdma_create(struct hmr_context *ctx)
 {
 	struct hmr_rdma_transport *rdma_trans;
-
+	struct itimerspec st_its;
+#ifdef HMR_NVM_ENABLE
+	struct itimerspec snb_its;
+#endif
 	rdma_trans=(struct hmr_rdma_transport*)calloc(1,sizeof(struct hmr_rdma_transport));
 	if(!rdma_trans){
 		ERROR_LOG("allocate hmr_rdma_transport memory error.");
@@ -686,6 +704,25 @@ struct hmr_rdma_transport *hmr_rdma_create(struct hmr_context *ctx)
 	rdma_trans->trans_state=HMR_RDMA_TRANSPORT_STATE_INIT;
 	rdma_trans->ctx=ctx;
 	hmr_rdma_event_channel_init(rdma_trans);
+
+	/*create send task timerfd*/
+	st_its.it_value.tv_sec = 3;
+    st_its.it_value.tv_nsec = 0;
+    st_its.it_interval.tv_sec = 3;
+    st_its.it_interval.tv_nsec = 0;
+	
+	rdma_trans->st_timerfd=hmr_timerfd_create(&st_its);
+	INFO_LOG("rdma trans st_timerfd %d",rdma_trans->st_timerfd);
+
+#ifdef HMR_NVM_ENABLE
+	/*create  sync nvm buffer timerfd*/
+	snb_its.it_value.tv_sec = 1;
+    snb_its.it_value.tv_nsec = 0;
+    snb_its.it_interval.tv_sec = 1;
+    snb_its.it_interval.tv_nsec = 0;
+	rdma_trans->snb_timerfd=hmr_timerfd_create(&snb_its);
+	INFO_LOG("rdma trans snb_timerfd %d",rdma_trans->snb_timerfd);
+#endif
 	INIT_LIST_HEAD(&rdma_trans->send_task_list);
 	return rdma_trans;
 }
@@ -798,7 +835,7 @@ cleanid:
 
 struct hmr_rdma_transport *hmr_rdma_accept(struct hmr_rdma_transport *rdma_trans)
 {
-	int i,err=0;
+	int err=0;
 	struct rdma_conn_param conn_param;
 	struct hmr_rdma_transport *accept_rdma_trans;
 
@@ -853,23 +890,54 @@ static int hmr_msg_check(struct hmr_rdma_transport *rdma_trans, struct hmr_msg *
 	return retval;
 }
 
-static enum ibv_wr_opcode hmr_get_msg_opcode(struct hmr_msg *msg)
+int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg *msg)
 {
-	enum ibv_wr_opcode retval=IBV_WR_SEND;
+	struct ibv_send_wr send_wr,*bad_wr=NULL;
+	struct ibv_sge sge;
+	struct hmr_task *send_task;
+	int err=0;
+
+	err=hmr_msg_check(rdma_trans, msg);
+	if(err){
+		ERROR_LOG("rdma transport exit error.");
+		return -1;
+	}
+
+	send_task=hmr_send_task_create(rdma_trans,msg);
+	send_task->task_type=msg->msg_type;
 	
-	switch (msg->msg_type)
-	{
-	case HMR_MSG_READ:
-		retval=IBV_WR_RDMA_READ;
-		break;
-	case HMR_MSG_WRITE:
-		retval=IBV_WR_RDMA_WRITE;
-		break;
+	if(send_task->task_type!=HMR_TASK_MR){
+		list_add_tail(&send_task->task_list_entry,&rdma_trans->send_task_list);
+		return 0;
 	}
 	
-	return retval;
+	memset(&send_wr,0,sizeof(send_wr));
+	
+	send_wr.wr_id=(uintptr_t)send_task;
+	send_wr.num_sge=1;
+	send_wr.opcode=hmr_get_opcode_from_task(send_task);
+	send_wr.sg_list=&sge;
+	send_wr.send_flags=IBV_SEND_SIGNALED;
+	
+	if(send_wr.opcode==IBV_WR_RDMA_READ||send_wr.opcode==IBV_WR_RDMA_WRITE){
+		INFO_LOG("%s post rdma write. %p",__func__,rdma_trans->peer_info.normal_mr.addr);
+		send_wr.wr.rdma.remote_addr=(uintptr_t)(rdma_trans->peer_info.normal_mr.addr);
+		send_wr.wr.rdma.rkey=rdma_trans->peer_info.normal_mr.rkey;
+	}
+		
+	sge.addr=(uintptr_t)send_task->sge_list.addr;
+	sge.length=send_task->sge_list.length;
+	sge.lkey=send_task->sge_list.lkey;
+		
+	err=ibv_post_send(rdma_trans->qp, &send_wr, &bad_wr);
+	if(err){
+		ERROR_LOG("ibv post send error.");
+	}
+	
+	return 0;
 }
 
+/*
 int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg *msg)
 {
 	struct ibv_send_wr send_wr,*bad_wr=NULL;
@@ -910,5 +978,5 @@ int hmr_rdma_send(struct hmr_rdma_transport *rdma_trans, struct hmr_msg *msg)
 	}
 	
 	return 0;
-}
+}*/
 

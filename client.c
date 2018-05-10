@@ -46,12 +46,13 @@ int main(int argc,char **argv)
 	hmr_rdma_send(rdma_trans, &msg);
 	for(i=0;i<5;i++)
 		hmr_rdma_send(rdma_trans, &msg);
-	/*
+	
 	msg.msg_type=HMR_MSG_WRITE;
 	msg.data=strdup("huststephen hello world process.");
 	msg.data_size=strlen(msg.data)+1;
 	hmr_rdma_send(rdma_trans, &msg);
-	*/
+	
+	sleep(13);
 	msg.msg_type=HMR_MSG_FINISH;
 	msg.data=strdup("hello world second.");
 	msg.data_size=strlen(msg.data)+1;
